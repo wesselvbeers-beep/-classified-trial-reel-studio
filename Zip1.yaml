@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: classified-trial-reel-studio
+    runtime: docker
+    plan: free
+    region: frankfurt
+    healthCheckPath: /
