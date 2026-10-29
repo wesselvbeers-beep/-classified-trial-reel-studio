@@ -3,7 +3,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pathlib import Path
-import subprocess, uuid, json, shutil, re, zipfile
+import subprocess, uuid, json, shutil, re, zipfile, math, array, sys
 
 ROOT=Path(__file__).parent
 WORK=ROOT/'work'; WORK.mkdir(exist_ok=True)
@@ -18,6 +18,29 @@ def probe(path):
  p=subprocess.run(['ffprobe','-v','error','-show_entries','format=duration','-of','json',str(path)],capture_output=True,text=True)
  try:return float(json.loads(p.stdout)['format']['duration'])
  except:return 0
+def detect_drop(path):
+ # Estimate the strongest musical energy transition, not a guaranteed musical drop.
+ cmd=['ffmpeg','-v','error','-i',str(path),'-vn','-ac','1','-ar','8000','-f','s16le','-']
+ try:
+  raw=subprocess.run(cmd,capture_output=True,timeout=110,check=True).stdout
+  pcm=array.array('h');pcm.frombytes(raw)
+  if sys.byteorder!='little':pcm.byteswap()
+  frame=800; energy=[]
+  for pos in range(0,len(pcm)-frame+1,frame):
+   chunk=pcm[pos:pos+frame]
+   energy.append(math.sqrt(sum(v*v for v in chunk)/frame)/32768)
+  if len(energy)<35:return None
+  best=(-1,None)
+  for i in range(30,len(energy)-10):
+   before=energy[max(0,i-20):i-2];after=energy[i:i+10]
+   if not before:continue
+   prev=sum(before)/len(before);now=sum(after)/len(after)
+   rise=(now-prev)/(prev+.025)
+   score=rise*min(1,now/.10)+max(0,now-prev)*1.5
+   if score>best[0]:best=(score,i/10)
+  return round(best[1],2) if best[1] is not None and best[0]>.09 else None
+ except (subprocess.SubprocessError,ValueError,OSError):return None
+
 @app.post('/api/upload')
 async def upload(file:UploadFile=File(...)):
  ext=Path(file.filename or '').suffix.lower()
@@ -25,7 +48,7 @@ async def upload(file:UploadFile=File(...)):
  ident=uuid.uuid4().hex; dest=WORK/(ident+ext)
  with dest.open('wb') as out:
   while chunk:=await file.read(1024*1024):out.write(chunk)
- return {'id':ident,'filename':file.filename,'duration':probe(dest),'url':'/api/media/'+ident}
+ return {'id':ident,'filename':file.filename,'duration':probe(dest),'estimated_drop':detect_drop(dest),'url':'/api/media/'+ident}
 @app.get('/api/media/{ident}')
 def media(ident:str):
  if not re.fullmatch('[0-9a-f]{32}',ident):raise HTTPException(404)
