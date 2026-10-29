@@ -48,7 +48,7 @@ async def upload(file:UploadFile=File(...)):
  ident=uuid.uuid4().hex; dest=WORK/(ident+ext)
  with dest.open('wb') as out:
   while chunk:=await file.read(1024*1024):out.write(chunk)
- return {'id':ident,'filename':file.filename,'duration':probe(dest),'estimated_drop':detect_drop(dest),'url':'/api/media/'+ident}
+ return {'id':ident,'filename':file.filename,'duration':probe(dest),'estimated_drop':None,'url':'/api/media/'+ident}
 @app.get('/api/media/{ident}')
 def media(ident:str):
  if not re.fullmatch('[0-9a-f]{32}',ident):raise HTTPException(404)
