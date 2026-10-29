@@ -89,6 +89,8 @@ class Render(BaseModel):
  hook_end:float=2
  layout:str='cover'
  blur:int=35
+ blur_background:bool=False
+ blur_intensity:int=24
  mirror_half:bool=False
  auto:bool=False
  contrast:float=0
@@ -131,6 +133,12 @@ def render(data:Render):
   if data.layout=='contain':
    vf=f'scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black'
   else:vf=f'scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}'
+  if data.blur_background and data.layout=='contain':
+   # Split source into a blurred full-frame background and a sharp centered foreground.
+   radius=max(0,min(int(data.blur_intensity),60))
+   bg=f'scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},boxblur=luma_radius={min(radius,40)}:luma_power=2:chroma_radius={min(radius,40)}:chroma_power=2'
+   fg=f'scale={w}:{h}:force_original_aspect_ratio=decrease'
+   vf=f'split=2[bgsrc][fgsrc];[bgsrc]{bg}[bg];[fgsrc]{fg}[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2'
   if data.mirror_half and i%2:vf+=',hflip'
   if data.auto:vf+=',eq=contrast=1.12:saturation=1.12:brightness=0.015'
   # Expose approximate, not Premiere-identical, color mapping
