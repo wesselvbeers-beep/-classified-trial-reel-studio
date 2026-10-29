@@ -55,6 +55,25 @@ def media(ident:str):
  path=next(iter(WORK.glob(ident+'.*')),None)
  if not path:raise HTTPException(404)
  return FileResponse(path,media_type='video/mp4' if path.suffix=='.mp4' else 'video/quicktime')
+class TrimRequest(BaseModel):
+ id:str
+ start:float
+ end:float
+
+@app.post('/api/trim')
+def trim_video(data:TrimRequest):
+ if not re.fullmatch('[0-9a-f]{32}',data.id):raise HTTPException(400,'Ongeldig bestand')
+ source=next((p for p in WORK.glob(data.id+'.*') if p.suffix in ('.mp4','.mov')),None)
+ if not source:raise HTTPException(404,'Video niet gevonden; upload opnieuw')
+ duration=probe(source)
+ start=max(0,min(float(data.start),duration))
+ end=max(start,min(float(data.end),duration))
+ if end-start<0.2:raise HTTPException(400,'Selecteer minimaal 0.2 seconde')
+ output_id=uuid.uuid4().hex
+ target=WORK/(output_id+'.mp4')
+ ff(['-ss',str(start),'-i',str(source),'-t',str(end-start),'-map','0:v:0','-map','0:a?','-c:v','libx264','-preset','veryfast','-crf','23','-pix_fmt','yuv420p','-c:a','aac','-movflags','+faststart',str(target)])
+ return {'url':'/api/media/'+output_id,'duration':probe(target),'start':start,'end':end}
+
 @app.post('/api/lut')
 async def lut(file:UploadFile=File(...)):
  if Path(file.filename or '').suffix.lower() not in ('.cube','.3dl'):raise HTTPException(400,'Alleen .cube of .3dl')
