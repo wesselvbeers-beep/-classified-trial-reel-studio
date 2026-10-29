@@ -10,7 +10,7 @@ WORK=ROOT/'work'; WORK.mkdir(exist_ok=True)
 app=FastAPI(title='Classified Trial Reel Studio')
 app.mount('/static',StaticFiles(directory=ROOT/'static'),name='static')
 @app.get('/')
-def home():return FileResponse(ROOT/'static'/'index.html')
+def home():return FileResponse(ROOT/'static'/'desktop.html')
 def ff(args):
  p=subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-y',*args],capture_output=True,text=True)
  if p.returncode:raise HTTPException(400,p.stderr[-1600:])
