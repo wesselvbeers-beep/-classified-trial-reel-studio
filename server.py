@@ -52,6 +52,8 @@ class TextVariantsRequest(BaseModel):
  genre:str=''
  allow_emojis:bool=False
  voice:str='artist'
+ rejected:list[str]=[]
+ preferred:list[str]=[]
 
 @app.get('/api/generate-texts/status')
 def text_generation_status():
@@ -84,19 +86,20 @@ def generate_texts(data:TextVariantsRequest):
  'Keep genre mentions grammatically natural and avoid forcing the same phrase structure repeatedly. ' 
  'If allow_emojis is true, emojis are permitted sparingly when natural and relevant; do not force emojis into every caption. If allow_emojis is false, never use emojis. ' 
  'For EVENT voice, write as an event or promoter sharing footage of artists and crowd, using neutral observations or the event perspective. NEVER speak as the performing artist or use first-person singular (I, me, my, mine, I\'m, I\'ve). Avoid inventing a specific event name or claiming the event performed the music. For ARTIST voice, natural first-person artist perspective is allowed but not mandatory. Keep the same authentic, non-corporate scene language in both modes. ' 
+ 'Learn the user-specific writing preferences from their preferred texts; follow their vocabulary, length, rhythm and humor. Rejected texts are negative examples: NEVER repeat or paraphrase them. Do not treat rejected texts as stylistic examples to imitate. ' 
  'Return exactly the requested number of distinct, original captions. '
  'No numbering, hashtags, marketing buzzwords or explanations. '
  'Return valid JSON only: {"texts":["..."]}.')
  payload={'model':os.getenv('OPENAI_TEXT_MODEL','gpt-4o-mini'),'temperature':0.85,
   'response_format':{'type':'json_object'},
   'messages':[{'role':'system','content':instruction},
-   {'role':'user','content':json.dumps({'examples':examples[:30],'approved_style_references':approved_caption_references(),'count':data.count,'music_genre':data.genre.strip()[:80],'allow_emojis':data.allow_emojis,'voice':data.voice,'instructions':'Return exactly count distinct captions. Do not copy examples.'})}]}
+   {'role':'user','content':json.dumps({'examples':examples[:30],'approved_style_references':approved_caption_references(),'count':data.count,'music_genre':data.genre.strip()[:80],'allow_emojis':data.allow_emojis,'voice':data.voice,'preferred_texts':data.preferred[:80],'rejected_texts':data.rejected[:150],'instructions':'Return exactly count distinct captions. Do not copy examples.'})}]}
  req=urllib.request.Request('https://api.openai.com/v1/chat/completions',
   data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
  try:
   with urllib.request.urlopen(req,timeout=75) as response: result=json.load(response)
   raw=json.loads(result['choices'][0]['message']['content'])
-  texts=[];seen=set();source={re.sub(r'\\s+',' ',s).strip().casefold() for s in examples}
+  texts=[];seen=set();blocked={re.sub(r'[^\w]+','',x.casefold()) for x in data.rejected if x.strip()};source={re.sub(r'\\s+',' ',s).strip().casefold() for s in examples}
   for item in raw.get('texts',[]):
    if not isinstance(item,str):continue
    t=re.sub(r'\\s+',' ',item).strip()
@@ -115,7 +118,7 @@ def generate_texts(data:TextVariantsRequest):
    if data.voice=='event' and re.search(r"\b(i|me|my|mine|i'm|i’ve|i've|myself)\b",t,flags=re.IGNORECASE):continue
    if t and t[-1] not in '.!?':t+='.'
    norm=t.casefold()
-   if t and norm not in seen and norm not in source:
+   if t and re.sub(r'[^\w]+','',norm) not in blocked and norm not in seen and norm not in source:
     texts.append(t);seen.add(norm)
    if len(texts)>=data.count:break
   if not texts:raise HTTPException(502,'Het AI-model leverde geen bruikbare unieke teksten op. Probeer andere voorbeelden.')
