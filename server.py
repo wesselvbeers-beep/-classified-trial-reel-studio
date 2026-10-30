@@ -201,6 +201,7 @@ class Render(BaseModel):
  outline_width:float=2
  outline_fade:float=2
  shadow_distance:float=0
+ shadow_opacity:float=95
  shadow_angle:float=135
 @app.post('/api/render')
 def render(data:Render):
@@ -254,8 +255,9 @@ def render(data:Render):
   angle=math.radians(float(data.shadow_angle)%360)
   shadow_x=int(round(math.cos(angle)*distance))
   shadow_y=int(round(math.sin(angle)*distance))
-  if data.shadow and (distance or fade):
-   vf+=f":shadowcolor=black@0.75:shadowx={shadow_x}:shadowy={shadow_y}"
+  if data.shadow and (distance or fade) and data.shadow_opacity>0:
+   opacity=max(0,min(100,float(data.shadow_opacity)))/100
+   vf+=f":shadowcolor=black@{opacity:.3f}:shadowx={shadow_x}:shadowy={shadow_y}"
   if data.textbar:vf+=':box=1:boxcolor=black@0.7:boxborderw=20'
   name=re.sub(r'[^A-Za-z0-9_-]','_',data.name)[:80] or 'Trial_Reel'
   target=outdir/f'{name}_{i+1}.mp4'
