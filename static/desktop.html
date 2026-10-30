@@ -639,18 +639,25 @@ function styleCaptionOverlay(el,scale){
  applyVariantOutline(el,s,scale);
 }
 function syncCaptionTypography(){
+ if($('captionWorkspace').classList.contains('hidden'))return;
  const stageWidth=$('variantStage').getBoundingClientRect().width||Math.min(window.innerHeight*.7,670)*9/16;
  const preview=$('captionVideoText');
  styleCaptionOverlay(preview,($('captionVideo').getBoundingClientRect().width||220)/stageWidth);
- $('captionGallery').querySelectorAll('.caption-card').forEach(card=>{
-  const frame=card.querySelector('.caption-card-image'),overlay=card.querySelector('.caption-on-screen');
-  if(frame&&overlay)styleCaptionOverlay(overlay,(frame.getBoundingClientRect().width||130)/stageWidth);
- });
+ const cards=$('captionGallery').querySelectorAll('.caption-card');
+ if(!cards.length)return;
+ // All cards share one width: avoid forcing 20 separate layout measurements.
+ const frameWidth=cards[0].querySelector('.caption-card-image').getBoundingClientRect().width||130;
+ const ratio=frameWidth/stageWidth;
+ for(const card of cards){
+  const overlay=card.querySelector('.caption-on-screen');
+  if(overlay)styleCaptionOverlay(overlay,ratio);
+ }
 }
+
 if(typeof ResizeObserver!=='undefined'){
  let captionTypographyFrame=0;
  const captionTypographyObserver=new ResizeObserver(()=>{if(captionTypographyFrame)return;captionTypographyFrame=requestAnimationFrame(()=>{captionTypographyFrame=0;if(!$('captionWorkspace').classList.contains('hidden'))syncCaptionTypography()})});
- captionTypographyObserver.observe($('captionGallery'));
+ // Do not observe the gallery: writing caption styles changes its layout and can retrigger the observer.
  captionTypographyObserver.observe($('captionVideo'));
 }
 function syncCaptionVideo(){
@@ -685,7 +692,7 @@ function renderCaptionGallery(){
   const footer=document.createElement('div');footer.className='caption-card-footer';const count=document.createElement('span');count.textContent=captionCurrentText(i).length+' tekens';field.addEventListener('input',()=>count.textContent=field.value.length+' tekens');
   const copy=document.createElement('button');copy.type='button';copy.textContent='Kopieer';copy.onclick=()=>navigator.clipboard.writeText(captionCurrentText(i)).then(()=>$('captionStatus').textContent='Caption gekopieerd.').catch(()=>$('captionStatus').textContent='Kopiëren niet toegestaan.');
   footer.append(count,copy);body.append(label,field,footer);card.append(image,body);frag.append(card);
- });box.append(frag);updateCaptionSelection();syncCaptionTypography();
+ });box.append(frag);updateCaptionSelection();requestAnimationFrame(syncCaptionTypography);
 }
 function countCaptionChars(){$('captionCounter').textContent=$('captionEditor').value.length+' tekens'}
 function updateCaptionSelection(){
