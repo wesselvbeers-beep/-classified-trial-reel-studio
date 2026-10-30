@@ -82,7 +82,16 @@ def generate_texts(data:TextVariantsRequest):
   if not texts:raise HTTPException(502,'Het AI-model leverde geen bruikbare unieke teksten op. Probeer andere voorbeelden.')
   return {'texts':texts,'requested':data.count}
  except urllib.error.HTTPError as err:
-  raise HTTPException(502,'AI-tekstgeneratie mislukt (providerstatus '+str(err.code)+').')
+  # Do not expose provider response bodies or credentials to clients.
+  if err.code==429:
+   raise HTTPException(429,'OpenAI weigert de aanvraag (429). Controleer het API-tegoed, de betaalmethode en de gebruikslimieten van je OpenAI Platform-project. ChatGPT Plus bevat geen API-tegoed.')
+  if err.code==401:
+   raise HTTPException(502,'OpenAI accepteert de API-sleutel niet (401). Controleer de sleutel in Render → Environment.')
+  if err.code==403:
+   raise HTTPException(502,'Dit OpenAI-project heeft geen toegang tot het gekozen model (403). Controleer de projectrechten.')
+  if err.code==400:
+   raise HTTPException(502,'OpenAI heeft de AI-aanvraag afgewezen (400). Controleer de modelinstelling OPENAI_TEXT_MODEL.')
+  raise HTTPException(502,'OpenAI kon de aanvraag niet verwerken (status '+str(err.code)+').')
  except (urllib.error.URLError,TimeoutError,KeyError,ValueError) as err:
   raise HTTPException(502,'AI-tekstgeneratie is tijdelijk niet beschikbaar.')
 
