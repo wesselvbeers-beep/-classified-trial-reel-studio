@@ -196,6 +196,9 @@ class Render(BaseModel):
  textbar:bool=False
  full_caps:bool=False
  italic:bool=False
+ outline:bool=True
+ outline_width:float=2
+ outline_fade:float=2
 @app.post('/api/render')
 def render(data:Render):
  if not re.fullmatch('[0-9a-f]{32}',data.id):raise HTTPException(400,'Ongeldig bestand')
@@ -241,7 +244,11 @@ def render(data:Render):
   txtfile=outdir/f'text_{i}.txt';txtfile.write_text(txt.upper() if data.full_caps else txt,encoding='utf-8')
   y={'top':'h*0.22','center':'(h-text_h)/2','bottom':'h*0.72'}.get(data.position,'(h-text_h)/2')
   font='/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf' if data.italic else '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
-  vf+=f",drawtext=fontfile={font}:textfile={txtfile.as_posix()}:fontcolor=white:fontsize={int(w*.055)}:x=(w-text_w)/2:y={y}:borderw=2:bordercolor=black@0.8"
+  border=max(0,min(20,int(round(data.outline_width)))) if data.outline else 0
+  fade=max(0,min(20,int(round(data.outline_fade)))) if data.outline else 0
+  vf+=f",drawtext=fontfile={font}:textfile={txtfile.as_posix()}:fontcolor=white:fontsize={int(w*.055)}:x=(w-text_w)/2:y={y}:borderw={border}:bordercolor=black@1"
+  if fade:
+   vf+=f":shadowcolor=black@0.75:shadowx={max(1,fade//2)}:shadowy={max(1,fade//2)}"
   if data.textbar:vf+=':box=1:boxcolor=black@0.7:boxborderw=20'
   name=re.sub(r'[^A-Za-z0-9_-]','_',data.name)[:80] or 'Trial_Reel'
   target=outdir/f'{name}_{i+1}.mp4'
