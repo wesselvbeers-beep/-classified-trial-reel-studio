@@ -75,6 +75,7 @@ def generate_texts(data:TextVariantsRequest):
  'Do not automatically mention crowds, drops, bass or energy unless the examples actually focus on those things. '
  'Prefer natural short sentences, specific observations, relatable POVs and unexpected but plausible hooks. '
  'Use the approved style references as guidance for tone and structure, not as text to copy. Avoid last kick and final kick phrasing. Vary sentence patterns and angles; do not create a list of interchangeable slogans. '
+ 'Never describe an event as happening today, tonight, yesterday or right now. Clips are often published later. Use timeless wording, or past-looking wording such as that day or that night when a time reference is genuinely useful. ' 
  'Use the same language as the examples. Write generated captions in normal sentence case: capitalize only the first letter of the sentence and proper nouns, never use ALL CAPS for emphasis. The user can separately enable full caps in text settings. Do not invent facts about a clip you have not seen. '
  'Usually 3-12 words; longer only if the examples demand it. '
  'When a music genre is provided by the user, treat it as an important creative keyword and naturally weave the exact genre phrase into a meaningful share of the captions (roughly half to three quarters), but not every caption. ' 
@@ -96,6 +97,18 @@ def generate_texts(data:TextVariantsRequest):
   for item in raw.get('texts',[]):
    if not isinstance(item,str):continue
    t=re.sub(r'\\s+',' ',item).strip()
+   t=t.lower()
+   t=t[:1].upper()+t[1:]
+   for pattern,replacement in [
+    (r'\bright now\b','at that moment'),
+    (r'\bthis morning\b','that morning'),
+    (r'\bthis afternoon\b','that afternoon'),
+    (r'\bthis evening\b','that evening'),
+    (r'\btonight\b','that night'),
+    (r'\btoday\b','that day'),
+    (r'\byesterday\b','that day')
+   ]:
+    t=re.sub(pattern,replacement,t,flags=re.IGNORECASE)
    norm=t.casefold()
    if t and norm not in seen and norm not in source:
     texts.append(t);seen.add(norm)
