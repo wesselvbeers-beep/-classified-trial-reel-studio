@@ -56,13 +56,24 @@ def generate_texts(data:TextVariantsRequest):
  if not 1<=data.count<=100:raise HTTPException(400,'Aantal moet tussen 1 en 100 liggen')
  key=os.getenv('OPENAI_API_KEY','').strip()
  if not key:raise HTTPException(503,'AI-tekstgeneratie is nog niet geconfigureerd. Voeg OPENAI_API_KEY toe aan de Render-omgevingsvariabelen.')
- instruction=('You are a creative social video copywriter for hard dance, raw hardstyle and uptempo. '
- 'Create fresh, short, distinct on-screen captions inspired by the STYLE, ENERGY, SUBJECT and LANGUAGE of the examples. '
- 'Do NOT repeat, quote, concatenate, paraphrase too closely or simply reorder the example sentences. '
- 'Each output should have a genuinely different angle, wording and hook. '
- 'Keep each caption punchy, natural and suitable for a short social clip, ideally 3-12 words. '
- 'Do not add numbering or explanations. Return JSON only: {"texts":["..."]}.')
- payload={'model':os.getenv('OPENAI_TEXT_MODEL','gpt-4o-mini'),'temperature':1.0,
+ instruction=('You write authentic on-screen text for short raw hardstyle and uptempo fan videos, NOT advertising copy. '
+ 'Your writing should feel like something an actual 18-25 year old scene fan or creator would put on a reel: '
+ 'specific, dry, sometimes cheeky, understated, immediate and believable. '
+ 'Treat the supplied examples as the PRIMARY reference for language, sentence structure, humor, attitude, '
+ 'capitalization and level of intensity. Match their vibe without copying or closely paraphrasing them. '
+ 'Never sound like a brand, promoter, inspirational speaker or marketing agency. '
+ 'Avoid generic hype and filler such as PURE ENERGY, THE CROWD GOES WILD, UNREAL MOMENT, '
+ 'INSANE VIBES, NEXT LEVEL, THIS IS WHAT WE LIVE FOR, LEGENDARY, UNMATCHED, '
+ 'GET READY, EXPERIENCE THE, and similar phrases unless explicitly present in user examples. '
+ 'Do not automatically mention crowds, drops, bass or energy unless the examples actually focus on those things. '
+ 'Prefer natural short sentences, specific observations, relatable POVs and unexpected but plausible hooks. '
+ 'Vary sentence patterns and angles; do not create a list of interchangeable slogans. '
+ 'Use the same language as the examples. Do not invent facts about a clip you have not seen. '
+ 'Usually 3-12 words; longer only if the examples demand it. '
+ 'Return exactly the requested number of distinct, original captions. '
+ 'No numbering, emojis, hashtags, marketing buzzwords or explanations. '
+ 'Return valid JSON only: {"texts":["..."]}.')
+ payload={'model':os.getenv('OPENAI_TEXT_MODEL','gpt-4o-mini'),'temperature':0.85,
   'response_format':{'type':'json_object'},
   'messages':[{'role':'system','content':instruction},
    {'role':'user','content':json.dumps({'examples':examples[:30],'count':data.count,'instructions':'Return exactly count distinct captions. Do not copy examples.'})}]}
