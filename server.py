@@ -18,54 +18,72 @@ def probe(path):
  p=subprocess.run(['ffprobe','-v','error','-show_entries','format=duration','-of','json',str(path)],capture_output=True,text=True)
  try:return float(json.loads(p.stdout)['format']['duration'])
  except:return 0
-def detect_drop(path):
- # Kick-oriented detection: compare sub/bass transients with full-band crowd noise.
- # A loud crowd scream alone should not be treated as the first kick.
+def detect_drop_candidates(path):
+ """Return ranked kick-pattern entrances, not the loudest individual sound."""
  def envelope(filters):
   cmd=['ffmpeg','-v','error','-i',str(path),'-vn','-af',filters,'-ac','1','-ar','8000','-f','s16le','-']
   raw=subprocess.run(cmd,capture_output=True,timeout=110,check=True).stdout
   pcm=array.array('h');pcm.frombytes(raw)
   if sys.byteorder!='little':pcm.byteswap()
-  step=320  # 40 ms
+  step=320
   return [math.sqrt(sum(v*v for v in pcm[p:p+step])/step)/32768 for p in range(0,len(pcm)-step+1,step)]
+ def smooth(values,radius):
+  pref=[0.]
+  for x in values:pref.append(pref[-1]+x)
+  return [(pref[min(len(values),i+radius+1)]-pref[max(0,i-radius)])/(min(len(values),i+radius+1)-max(0,i-radius)) for i in range(len(values))]
  try:
-  bass=envelope('highpass=f=35,lowpass=f=155')
+  bass=envelope('highpass=f=35,lowpass=f=170')
   full=envelope('anull')
   n=min(len(bass),len(full))
-  if n<100:return None
+  if n<80:return []
   bass=bass[:n];full=full[:n]
-  # Local transient strength. Vocal screams mostly occupy higher frequencies,
-  # while the attack and body of a kick have substantial low-frequency energy.
-  pulses=[]
-  for i in range(25,n-25):
-   previous=sum(bass[i-12:i-2])/10
-   attack=max(bass[i:i+3])
-   rise=max(0,attack-previous)
-   if attack<.009 or rise<.004:continue
-   if attack<max(bass[i-3:i]):continue
-   low_ratio=attack/(max(full[i:i+3])+.008)
-   pulses.append((i,rise*min(1,low_ratio/.30),attack))
-  if not pulses:return None
-  # A drop usually introduces a sequence of kicks, not one isolated scream.
-  # Score the FIRST attack in a run of bass transients at a plausible beat interval.
-  best=(-1,None)
-  for i,strength,level in pulses:
-   nearby=[(j,s) for j,s,_ in pulses if i+6<=j<=i+55]
-   repeats=0
-   for j,s in nearby:
-    dt=j-i
-    if any(abs(dt-beat)<=3 for beat in (8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24)):
-     if s>=strength*.22:repeats+=1
-   if repeats<2:continue
-   before=sum(bass[max(0,i-25):max(1,i-5)])/max(1,min(20,i-5))
-   after=sum(bass[i:min(n,i+25)])/max(1,min(25,n-i))
-   sustained=max(0,after-before)
-   score=strength*(1+min(3,repeats)*.32)+sustained*.65
-   # Prefer the onset of the rhythmic section over later kicks in the same drop.
-   score-=max(0,i-25)*.000002
-   if score>best[0]:best=(score,i)
-  return round(best[1]*.04,2) if best[1] is not None else None
- except (subprocess.SubprocessError,ValueError,OSError,ZeroDivisionError):return None
+  low=smooth(bass,2)
+  # Detect local kick attacks in the low end, suppressing broad vocal swells.
+  peaks=[]
+  for i in range(8,n-8):
+   prev=sum(low[i-7:i-2])/5
+   rise=low[i]-prev
+   if rise<=.003 or low[i]<.007 or low[i]<max(low[i-2:i]):continue
+   ratio=low[i]/(full[i]+.012)
+   if ratio<.16:continue
+   if peaks and i-peaks[-1][0]<4:
+    if rise>peaks[-1][1]:peaks[-1]=(i,rise,low[i])
+    continue
+   peaks.append((i,rise,low[i]))
+  if len(peaks)<3:return []
+  # Candidate is the first attack of a repeated pattern after a quieter section.
+  scored=[]
+  for k,(i,rise,level) in enumerate(peaks):
+   if i<8:continue
+   future=peaks[k+1:]
+   best_pattern=0.
+   for beat in range(7,22):
+    hits=0;energy=0.
+    for mult in range(1,5):
+     target=i+beat*mult
+     match=[p for p in future if abs(p[0]-target)<=2]
+     if match:
+      hits+=1;energy+=max(p[1] for p in match)
+    if hits>=2:best_pattern=max(best_pattern,hits+min(2,energy/max(.003,rise)))
+   if best_pattern<2:continue
+   before=sum(low[max(0,i-30):max(1,i-5)])/max(1,min(25,i-5))
+   after=sum(low[i:min(n,i+35)])/max(1,min(35,n-i))
+   transition=max(0.,after-before)
+   # Reward sustained low-end rhythm and a genuine change from the buildup.
+   score=(rise+transition*.9)*(1+best_pattern*.23)/(before+.018)**.32
+   scored.append((score,i))
+  scored.sort(reverse=True)
+  result=[]
+  for score,i in scored:
+   if all(abs(i/25-t)>1.5 for t in result):
+    result.append(round(i/25,2))
+   if len(result)>=3:break
+  return result
+ except (subprocess.SubprocessError,ValueError,OSError,ZeroDivisionError):return []
+
+def detect_drop(path):
+ candidates=detect_drop_candidates(path)
+ return candidates[0] if candidates else None
 
 def approved_caption_references():
  path=ROOT/'caption_library.txt'
@@ -176,7 +194,8 @@ def redetect_drop(ident:str):
  if not re.fullmatch('[0-9a-f]{32}',ident):raise HTTPException(404)
  path=next(iter(WORK.glob(ident+'.*')),None)
  if not path:raise HTTPException(404)
- return {'estimated_drop':detect_drop(path)}
+ candidates=detect_drop_candidates(path)
+ return {'estimated_drop':candidates[0] if candidates else None,'candidates':candidates}
 
 @app.get('/api/media/{ident}')
 def media(ident:str):
