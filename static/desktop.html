@@ -35,7 +35,7 @@ function setViewerDrag(active){viewer.classList.toggle('viewer-drag-active',acti
 viewer.addEventListener('dragenter',e=>{if(!isExternalFileDrag(e))return;e.preventDefault();viewerDragDepth++;setViewerDrag(true)});
 viewer.addEventListener('dragover',e=>{if(!isExternalFileDrag(e))return;e.preventDefault();e.dataTransfer.dropEffect='copy';setViewerDrag(true)});
 viewer.addEventListener('dragleave',e=>{if(!isExternalFileDrag(e))return;viewerDragDepth=Math.max(0,viewerDragDepth-1);if(!viewerDragDepth)setViewerDrag(false)});
-viewer.addEventListener('drop',e=>{if(!isExternalFileDrag(e))return;e.preventDefault();e.stopPropagation();viewerDragDepth=0;setViewerDrag(false);const f=Array.from(e.dataTransfer.files||[]).find(f=>/\\.(mp4|mov)$/i.test(f.name)||f.type.startsWith('video/'));if(f)load(f);else $('status').textContent='Sleep een MP4- of MOV-video naar het previewvenster.'});
+viewer.addEventListener('drop',e=>{if(!isExternalFileDrag(e))return;e.preventDefault();e.stopPropagation();viewerDragDepth=0;setViewerDrag(false);const f=Array.from(e.dataTransfer.files||[]).find(f=>/\.(mp4|mov)$/i.test(f.name)||f.type.startsWith('video/'));if(f)load(f);else $('status').textContent='Sleep een MP4- of MOV-video naar het previewvenster.'});
 document.addEventListener('dragend',()=>{viewerDragDepth=0;setViewerDrag(false);setGlobalFileDrag(false)});
 const globalFileOverlay=document.createElement('div');
 globalFileOverlay.id='globalFileOverlay';
