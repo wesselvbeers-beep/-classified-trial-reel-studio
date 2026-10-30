@@ -503,6 +503,8 @@ function syncVariantThumbnailTypography(){
  for(const frame of $('variantList').querySelectorAll('.variant-thumb-frame')){
   const caption=frame.querySelector('.variant-thumb-caption');if(!caption)continue;
   const ratio=frame.getBoundingClientRect().width/stageWidth;
+  caption.style.left=s.x+'%';caption.style.top=s.y+'%';
+  caption.style.fontWeight=s.weight;caption.style.fontStyle=s.italic?'italic':'normal';caption.style.color=s.color;
   caption.style.fontSize=(s.size*ratio)+'px';applyVariantOutline(caption,s,ratio);
   caption.style.lineHeight='1.15';
   caption.style.padding='0';
@@ -805,10 +807,11 @@ overlay.addEventListener('pointerdown',e=>{
   variantSettings.y=clamp((ev.clientY-rect.top)/rect.height*100,5,95);
   stage.classList.toggle('center-snapped',variantSettings.x===50);
   updateVariantPreview();
+  syncVariantThumbnailTypography();
  };
  move(e);
  overlay.addEventListener('pointermove',move);
- const finish=()=>{draggingVariant=false;stage.classList.remove('center-snapped');overlay.removeEventListener('pointermove',move);overlay.removeEventListener('pointerup',finish);overlay.removeEventListener('pointercancel',finish)};
+ const finish=()=>{syncVariantThumbnailTypography();syncCaptionTypography();saveProjectLocally();draggingVariant=false;stage.classList.remove('center-snapped');overlay.removeEventListener('pointermove',move);overlay.removeEventListener('pointerup',finish);overlay.removeEventListener('pointercancel',finish)};
  overlay.addEventListener('pointerup',finish);
  overlay.addEventListener('pointercancel',finish);
 });
