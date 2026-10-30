@@ -3,7 +3,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pathlib import Path
-import subprocess, uuid, json, shutil, re, zipfile, math, array, sys
+import subprocess, uuid, json, shutil, re, zipfile, math, array, sys, os, urllib.request, urllib.error
 
 ROOT=Path(__file__).parent
 WORK=ROOT/'work'; WORK.mkdir(exist_ok=True)
@@ -40,6 +40,47 @@ def detect_drop(path):
    if score>best[0]:best=(score,i/10)
   return round(best[1],2) if best[1] is not None and best[0]>.09 else None
  except (subprocess.SubprocessError,ValueError,OSError):return None
+
+class TextVariantsRequest(BaseModel):
+ examples:list[str]
+ count:int=5
+
+@app.post('/api/generate-texts')
+def generate_texts(data:TextVariantsRequest):
+ examples=list(dict.fromkeys(s.strip() for s in data.examples if s.strip()))
+ if not examples:raise HTTPException(400,'Vul eerst voorbeeldzinnen in')
+ if not 1<=data.count<=100:raise HTTPException(400,'Aantal moet tussen 1 en 100 liggen')
+ key=os.getenv('OPENAI_API_KEY','').strip()
+ if not key:raise HTTPException(503,'AI-tekstgeneratie is nog niet geconfigureerd. Voeg OPENAI_API_KEY toe aan de Render-omgevingsvariabelen.')
+ instruction=('You are a creative social video copywriter for hard dance, raw hardstyle and uptempo. '
+ 'Create fresh, short, distinct on-screen captions inspired by the STYLE, ENERGY, SUBJECT and LANGUAGE of the examples. '
+ 'Do NOT repeat, quote, concatenate, paraphrase too closely or simply reorder the example sentences. '
+ 'Each output should have a genuinely different angle, wording and hook. '
+ 'Keep each caption punchy, natural and suitable for a short social clip, ideally 3-12 words. '
+ 'Do not add numbering or explanations. Return JSON only: {"texts":["..."]}.')
+ payload={'model':os.getenv('OPENAI_TEXT_MODEL','gpt-4o-mini'),'temperature':1.0,
+  'response_format':{'type':'json_object'},
+  'messages':[{'role':'system','content':instruction},
+   {'role':'user','content':json.dumps({'examples':examples[:30],'count':data.count,'instructions':'Return exactly count distinct captions. Do not copy examples.'})}]}
+ req=urllib.request.Request('https://api.openai.com/v1/chat/completions',
+  data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
+ try:
+  with urllib.request.urlopen(req,timeout=75) as response: result=json.load(response)
+  raw=json.loads(result['choices'][0]['message']['content'])
+  texts=[];seen=set();source={re.sub(r'\\s+',' ',s).strip().casefold() for s in examples}
+  for item in raw.get('texts',[]):
+   if not isinstance(item,str):continue
+   t=re.sub(r'\\s+',' ',item).strip()
+   norm=t.casefold()
+   if t and norm not in seen and norm not in source:
+    texts.append(t);seen.add(norm)
+   if len(texts)>=data.count:break
+  if not texts:raise HTTPException(502,'Het AI-model leverde geen bruikbare unieke teksten op. Probeer andere voorbeelden.')
+  return {'texts':texts,'requested':data.count}
+ except urllib.error.HTTPError as err:
+  raise HTTPException(502,'AI-tekstgeneratie mislukt (providerstatus '+str(err.code)+').')
+ except (urllib.error.URLError,TimeoutError,KeyError,ValueError) as err:
+  raise HTTPException(502,'AI-tekstgeneratie is tijdelijk niet beschikbaar.')
 
 @app.post('/api/upload')
 async def upload(file:UploadFile=File(...)):
