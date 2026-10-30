@@ -18,73 +18,6 @@ def probe(path):
  p=subprocess.run(['ffprobe','-v','error','-show_entries','format=duration','-of','json',str(path)],capture_output=True,text=True)
  try:return float(json.loads(p.stdout)['format']['duration'])
  except:return 0
-def detect_drop_candidates(path):
- """Return ranked kick-pattern entrances, not the loudest individual sound."""
- def envelope(filters):
-  cmd=['ffmpeg','-v','error','-i',str(path),'-vn','-af',filters,'-ac','1','-ar','8000','-f','s16le','-']
-  raw=subprocess.run(cmd,capture_output=True,timeout=110,check=True).stdout
-  pcm=array.array('h');pcm.frombytes(raw)
-  if sys.byteorder!='little':pcm.byteswap()
-  step=320
-  return [math.sqrt(sum(v*v for v in pcm[p:p+step])/step)/32768 for p in range(0,len(pcm)-step+1,step)]
- def smooth(values,radius):
-  pref=[0.]
-  for x in values:pref.append(pref[-1]+x)
-  return [(pref[min(len(values),i+radius+1)]-pref[max(0,i-radius)])/(min(len(values),i+radius+1)-max(0,i-radius)) for i in range(len(values))]
- try:
-  bass=envelope('highpass=f=35,lowpass=f=170')
-  full=envelope('anull')
-  n=min(len(bass),len(full))
-  if n<80:return []
-  bass=bass[:n];full=full[:n]
-  low=smooth(bass,2)
-  # Detect local kick attacks in the low end, suppressing broad vocal swells.
-  peaks=[]
-  for i in range(8,n-8):
-   prev=sum(low[i-7:i-2])/5
-   rise=low[i]-prev
-   if rise<=.003 or low[i]<.007 or low[i]<max(low[i-2:i]):continue
-   ratio=low[i]/(full[i]+.012)
-   if ratio<.16:continue
-   if peaks and i-peaks[-1][0]<4:
-    if rise>peaks[-1][1]:peaks[-1]=(i,rise,low[i])
-    continue
-   peaks.append((i,rise,low[i]))
-  if len(peaks)<3:return []
-  # Candidate is the first attack of a repeated pattern after a quieter section.
-  scored=[]
-  for k,(i,rise,level) in enumerate(peaks):
-   if i<8:continue
-   future=peaks[k+1:]
-   best_pattern=0.
-   for beat in range(7,22):
-    hits=0;energy=0.
-    for mult in range(1,5):
-     target=i+beat*mult
-     match=[p for p in future if abs(p[0]-target)<=2]
-     if match:
-      hits+=1;energy+=max(p[1] for p in match)
-    if hits>=2:best_pattern=max(best_pattern,hits+min(2,energy/max(.003,rise)))
-   if best_pattern<2:continue
-   before=sum(low[max(0,i-30):max(1,i-5)])/max(1,min(25,i-5))
-   after=sum(low[i:min(n,i+35)])/max(1,min(35,n-i))
-   transition=max(0.,after-before)
-   # Reward sustained low-end rhythm and a genuine change from the buildup.
-   score=(rise+transition*.9)*(1+best_pattern*.23)/(before+.018)**.32
-   scored.append((score,i))
-  scored.sort(reverse=True)
-  result=[]
-  for score,i in scored:
-   if all(abs(i/25-t)>1.5 for t in result):
-    result.append(round(i/25,2))
-   if len(result)>=3:break
-  return result
- except (subprocess.SubprocessError,ValueError,OSError,ZeroDivisionError):return []
-
-def detect_drop(path):
- candidates=detect_drop_candidates(path)
- return candidates[0] if candidates else None
-
 def approved_caption_references():
  path=ROOT/'caption_library.txt'
  if not path.exists():return []
@@ -188,15 +121,7 @@ async def upload(file:UploadFile=File(...)):
  ident=uuid.uuid4().hex; dest=WORK/(ident+ext)
  with dest.open('wb') as out:
   while chunk:=await file.read(1024*1024):out.write(chunk)
- return {'id':ident,'filename':file.filename,'duration':probe(dest),'estimated_drop':detect_drop(dest),'url':'/api/media/'+ident}
-@app.get('/api/detect-drop/{ident}')
-def redetect_drop(ident:str):
- if not re.fullmatch('[0-9a-f]{32}',ident):raise HTTPException(404)
- path=next(iter(WORK.glob(ident+'.*')),None)
- if not path:raise HTTPException(404)
- candidates=detect_drop_candidates(path)
- return {'estimated_drop':candidates[0] if candidates else None,'candidates':candidates}
-
+ return {'id':ident,'filename':file.filename,'duration':probe(dest),'url':'/api/media/'+ident}
 @app.get('/api/media/{ident}')
 def media(ident:str):
  if not re.fullmatch('[0-9a-f]{32}',ident):raise HTTPException(404)
