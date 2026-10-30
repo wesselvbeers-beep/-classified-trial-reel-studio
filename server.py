@@ -145,6 +145,13 @@ async def upload(file:UploadFile=File(...)):
  with dest.open('wb') as out:
   while chunk:=await file.read(1024*1024):out.write(chunk)
  return {'id':ident,'filename':file.filename,'duration':probe(dest),'estimated_drop':detect_drop(dest),'url':'/api/media/'+ident}
+@app.get('/api/detect-drop/{ident}')
+def redetect_drop(ident:str):
+ if not re.fullmatch('[0-9a-f]{32}',ident):raise HTTPException(404)
+ path=next(iter(WORK.glob(ident+'.*')),None)
+ if not path:raise HTTPException(404)
+ return {'estimated_drop':detect_drop(path)}
+
 @app.get('/api/media/{ident}')
 def media(ident:str):
  if not re.fullmatch('[0-9a-f]{32}',ident):raise HTTPException(404)
