@@ -54,6 +54,7 @@ def generate_texts(data:TextVariantsRequest):
  'INSANE VIBES, NEXT LEVEL, THIS IS WHAT WE LIVE FOR, LEGENDARY, UNMATCHED, '
  'GET READY, EXPERIENCE THE, and similar phrases unless explicitly present in user examples. '
  'Do not automatically mention crowds, drops, bass or energy unless the examples actually focus on those things. '
+ 'Never use the words beat or beats in generated captions. Use drop, kick, kicks, or track instead, whichever fits the meaning naturally; do not force these terms into every caption. '
  'Prefer natural short sentences, specific observations, relatable POVs and unexpected but plausible hooks. '
  'Use the approved style references as guidance for tone and structure, not as text to copy. Avoid last kick and final kick phrasing. Vary sentence patterns and angles; do not create a list of interchangeable slogans. '
  'Never describe an event as happening today, tonight, yesterday or right now. Clips are often published later. Use timeless wording, or past-looking wording such as that day or that night when a time reference is genuinely useful. ' 
