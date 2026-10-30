@@ -115,6 +115,42 @@ def generate_texts(data:TextVariantsRequest):
  except (urllib.error.URLError,TimeoutError,KeyError,ValueError) as err:
   raise HTTPException(502,'AI-tekstgeneratie is tijdelijk niet beschikbaar.')
 
+
+class CaptionRequest(BaseModel):
+ onscreen_text:str
+ language:str='en'
+ tone:str='underground'
+ focus:list[str]=[]
+ allow_emojis:bool=True
+ instructions:str=''
+
+@app.post('/api/generate-caption')
+def generate_caption(data:CaptionRequest):
+ key=os.getenv('OPENAI_API_KEY','').strip()
+ if not key:raise HTTPException(503,'AI is niet ingesteld. Controleer OPENAI_API_KEY.')
+ source=data.onscreen_text.strip()
+ if not source:raise HTTPException(400,'Deze variant heeft nog geen on-screen tekst.')
+ system=('Write exactly ONE very short social media caption based on the supplied on-screen text for a raw hardstyle or uptempo trial reel. '
+  'The caption must complement the on-screen text rather than copy it. Natural underground scene language, not generic marketing hype. '
+  'Prefer 2 to 9 words, one sentence only, no hashtags, no invented facts, no quotation marks. '
+  'Never use beat or beats. When relevant use drop, kick or track instead. '
+  'Use the requested language and tone. Emoji use must strictly follow allow_emojis. '
+  'Return JSON only: {"caption":"..."}')
+ payload={'model':os.getenv('OPENAI_TEXT_MODEL','gpt-4o-mini'),'temperature':0.8,'response_format':{'type':'json_object'},
+  'messages':[{'role':'system','content':system},{'role':'user','content':json.dumps({'onscreen_text':source[:350],'language':data.language,'tone':data.tone,'focus':data.focus[:8],'allow_emojis':data.allow_emojis,'instructions':data.instructions[:400]})}]}
+ req=urllib.request.Request('https://api.openai.com/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
+ try:
+  with urllib.request.urlopen(req,timeout=75) as response:result=json.load(response)
+  caption=str(json.loads(result['choices'][0]['message']['content']).get('caption','')).strip()
+  caption=re.sub(r'\\s+',' ',caption)
+  if not caption:raise HTTPException(502,'AI leverde geen caption op.')
+  return {'caption':caption[:180]}
+ except urllib.error.HTTPError as err:
+  if err.code==429:raise HTTPException(429,'API-limiet bereikt. Controleer je OpenAI API-tegoed.')
+  raise HTTPException(502,'Caption genereren mislukt (status '+str(err.code)+').')
+ except (urllib.error.URLError,TimeoutError,KeyError,ValueError):
+  raise HTTPException(502,'Caption genereren is tijdelijk niet beschikbaar.')
+
 @app.post('/api/upload')
 async def upload(file:UploadFile=File(...)):
  ext=Path(file.filename or '').suffix.lower()
