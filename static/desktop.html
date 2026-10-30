@@ -174,7 +174,7 @@ function switchWorkspace(which){
   if(!variantItems.length){
    // Do not auto-generate or replace user work when switching screens.
    $('variantGenerationInfo').textContent='Vul voorbeeldzinnen in en klik op Genereer teksten.';
-  }else updateVariantPreview();
+  }else{drawVariantList();updateVariantPreview();}
  }else{
   $('variantVideo').pause();
   $('variantWorkspace').classList.add('hidden');$('masterWorkspace').classList.remove('hidden');
