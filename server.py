@@ -247,8 +247,8 @@ def render(data:Render):
   txtfile=outdir/f'text_{i}.txt';txtfile.write_text(txt.upper() if data.full_caps else txt,encoding='utf-8')
   y={'top':'h*0.22','center':'(h-text_h)/2','bottom':'h*0.72'}.get(data.position,'(h-text_h)/2')
   font='/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf' if data.italic else '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
-  border=max(0,min(20,int(round(data.outline_width)))) if data.outline else 0
-  fade=max(0,min(20,int(round(data.outline_fade)))) if data.outline else 0
+  border=max(0,min(4,int(round(float(data.outline_width)*96/72)))) if data.outline else 0
+  fade=max(0,min(20,int(round(data.outline_fade)))) if data.shadow else 0
   vf+=f",drawtext=fontfile={font}:textfile={txtfile.as_posix()}:fontcolor=white:fontsize={int(w*.055)}:x=(w-text_w)/2:y={y}:borderw={border}:bordercolor=black@1"
   distance=max(0,min(40,float(data.shadow_distance))) if data.shadow else 0
   angle=math.radians(float(data.shadow_angle)%360)
