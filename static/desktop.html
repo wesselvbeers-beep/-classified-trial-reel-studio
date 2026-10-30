@@ -518,7 +518,8 @@ function syncVariantThumbnailTypography(){
  }
 }
 if(typeof ResizeObserver!=='undefined'){
- const variantTypographyObserver=new ResizeObserver(()=>syncVariantThumbnailTypography());
+ let variantTypographyFrame=0;
+ const variantTypographyObserver=new ResizeObserver(()=>{if(variantTypographyFrame)return;variantTypographyFrame=requestAnimationFrame(()=>{variantTypographyFrame=0;if(!$('variantWorkspace').classList.contains('hidden'))syncVariantThumbnailTypography()})});
  variantTypographyObserver.observe($('variantStage'));
  variantTypographyObserver.observe($('variantList'));
 }
@@ -647,7 +648,8 @@ function syncCaptionTypography(){
  });
 }
 if(typeof ResizeObserver!=='undefined'){
- const captionTypographyObserver=new ResizeObserver(()=>{if(!$('captionWorkspace').classList.contains('hidden'))syncCaptionTypography()});
+ let captionTypographyFrame=0;
+ const captionTypographyObserver=new ResizeObserver(()=>{if(captionTypographyFrame)return;captionTypographyFrame=requestAnimationFrame(()=>{captionTypographyFrame=0;if(!$('captionWorkspace').classList.contains('hidden'))syncCaptionTypography()})});
  captionTypographyObserver.observe($('captionGallery'));
  captionTypographyObserver.observe($('captionVideo'));
 }
@@ -899,7 +901,9 @@ function openProjectDB(){return new Promise((resolve,reject)=>{const req=indexed
 async function persistProjectFile(f){try{const db=await openProjectDB();await new Promise((resolve,reject)=>{const tx=db.transaction('files','readwrite');tx.objectStore('files').put(f,'active');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});projectFileSaved=true;db.close()}catch(err){projectFileSaved=false;$('status').textContent='Video kon niet lokaal worden opgeslagen. Bewaar een kopie van je bestand.';console.warn('Project video autosave failed',err)}}
 async function getSavedProjectFile(){const db=await openProjectDB();try{return await new Promise((resolve,reject)=>{const req=db.transaction('files','readonly').objectStore('files').get('active');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}finally{db.close()}}
 function projectState(){return {version:1,source:file?.name||'',start,end,drop,dropLocked,clipOffset,videoPlaced,audioPlaced,fit,mirror,blurEnabled,blurIntensity,grade:{...grade},caption,lutId,variantItems:[...variantItems],activeVariant,variantSettings:{...variantSettings},guideInstagram:$('guideInstagram').checked,alternateMirror,variantCount:$('variantCount').value,variantTheme:$('variantTheme').value,variantGenre:$('variantGenre').value,variantVoice:$('variantVoice').value,variantAllowEmojis:$('variantAllowEmojis').checked,captionAllowEmojis:$('captionAllowEmojis').checked,captionLanguage:$('captionLanguage').value,captionTone:$('captionTone').value,captionInstructions:$('captionInstructions').value,captionMinWords:$('captionMinWords').value,captionMaxWords:$('captionMaxWords').value,variantName:$('variantName').value,variantResolution:$('variantResolution').value,variantFps:$('variantFps').value,masterConfirmed,volume:$('video').volume,muted:$('video').muted}}
-function saveProjectLocally(){if(restoringProject||!file)return;try{const state=JSON.stringify(projectState());if(state!==lastAutosave){localStorage.setItem(projectStorageKey,state);lastAutosave=state}}catch(err){console.warn('Project state autosave failed',err)}}
+let autosaveTimer=null;
+function flushProjectSave(){if(restoringProject||!file)return;try{const state=JSON.stringify(projectState());if(state!==lastAutosave){localStorage.setItem(projectStorageKey,state);lastAutosave=state}}catch(err){console.warn('Project state autosave failed',err)}}
+function saveProjectLocally(){if(restoringProject||!file)return;clearTimeout(autosaveTimer);autosaveTimer=setTimeout(flushProjectSave,650)}
 async function restoreLocalProject(){
  let saved;try{saved=JSON.parse(localStorage.getItem(projectStorageKey)||'null')}catch{return}
  if(!saved?.source)return;
@@ -928,7 +932,7 @@ async function restoreLocalProject(){
  finally{restoringProject=false;saveProjectLocally()}
 }
 setInterval(saveProjectLocally,1200);
-window.addEventListener('pagehide',saveProjectLocally);
+window.addEventListener('pagehide',()=>{clearTimeout(autosaveTimer);flushProjectSave()});
 restoreLocalProject();
 })();
 </script></body></html>
