@@ -195,6 +195,9 @@
 #captionWorkspace .caption-on-screen,#captionWorkspace .caption-video-text{-webkit-text-stroke:0!important}
 #captionWorkspace .caption-on-screen::before,#captionWorkspace .caption-video-text::before{content:attr(data-text);position:absolute;inset:0;display:block;white-space:inherit;overflow-wrap:inherit;text-align:inherit;font:inherit;line-height:inherit;letter-spacing:inherit;color:transparent;-webkit-text-fill-color:transparent;-webkit-text-stroke:var(--outline-stroke,0px) #000;filter:blur(var(--outline-blur,0px));z-index:-1;pointer-events:none;text-shadow:none!important}
 #captionWorkspace [data-outline="off"]::before{display:none}
+/* Step 3: paint the outline on the glyphs themselves; the negative-z pseudo-layer was obscured by the video frame. */
+#captionWorkspace .caption-on-screen,#captionWorkspace .caption-video-text{-webkit-text-stroke:var(--outline-stroke,0px) #000!important;paint-order:stroke fill!important}
+#captionWorkspace .caption-on-screen::before,#captionWorkspace .caption-video-text::before{display:none!important}
 </style></head><body><header><div class="logo">C.</div><div class="brand">TRIAL REEL STUDIO<small>CLASSIFIED · DESKTOP BETA 2.0</small></div><div class="nav" id="nav"></div><button class="btn" id="undoBtn" title="Command + Z" disabled>↶ Ongedaan</button><button class="btn" id="redoBtn" title="Shift + Command + Z" disabled>↷ Herstellen</button><button class="btn" id="save">Project opslaan</button><nav class="workspace-switcher" aria-label="Wissel tussen werkvensters"><button class="workspace-tab active" id="switchMaster" type="button">1 · Masterclip</button><button class="workspace-tab" id="switchVariants" type="button">2 · Varianten & teksten</button><button class="workspace-tab" id="switchCaptions" type="button">3 · Caption generator</button></nav><span class="workflow-indicator" id="workflowIndicator">MASTERCLIP · 1 / 3</span><button class="primary" id="exportTop" disabled style="display:none">Naar varianten</button></header>
 <div id="masterWorkspace"><div class="workspace"><aside class="pane"><h3>Media</h3><div class="pad"><div class="upload" id="upload"><strong>↑</strong><b>Video uploaden</b><p>Sleep MP4 / MOV of kies bestand</p><button class="btn" id="choose">Bestand kiezen</button></div><input id="file" type="file" accept=".mp4,.mov" hidden><div class="file" id="fileInfo" draggable="true" title="Sleep naar de tijdlijn">Nog geen video geselecteerd</div><p class="status" id="uploadStatus"></p><h3>Projectmedia</h3><p class="info" id="mediaInfo">Je videobestand verschijnt hier.</p></div></aside>
 <main class="viewer" id="viewer"><div class="viewer-drop-overlay" id="viewerDropOverlay"><div class="viewer-drop-message"><span class="drop-upload-symbol">+</span><strong>Sleep je video hierheen</strong><span>MP4 of MOV · laat los om te importeren</span></div></div><div class="screen"><video id="blurBackground" class="blur-background" muted playsinline preload="metadata" aria-hidden="true"></video><video id="video" playsinline preload="metadata"></video><div class="caption" id="caption"></div><div class="preview-timecode" id="previewTimecode">00:00 / 00:00</div></div><div class="controls"><button class="btn" id="lockDrop" title="Zet de DROP vast op het huidige videoframe">🔒 Lock DROP</button><button class="btn" id="startBtn">↤ Start</button></div><div class="strip-row"><button class="btn" id="stripPlay">▶</button><div class="strip" id="strip"><div class="thumbs" id="thumbs"></div><div class="selected" id="selected"></div><div class="handle" id="left"></div><div class="handle" id="right"></div><div class="drop" id="drop"></div><div class="strip-playhead" id="stripPlayhead" aria-hidden="true"></div></div></div><p class="info" id="trimInfo">Versleep de witte trimhandgrepen en de rode DROP-marker.</p><p class="status" id="status"></p></main>
@@ -610,6 +613,13 @@ function setEmojiButtons(prefix,enabled){
 function captionCurrentText(i){return String(captionItems[i]||'')}
 function styleCaptionOverlay(el,scale){
  const s=variantSettings;
+ const master=$('variantOverlay');
+ const masterStyle=window.getComputedStyle(master);
+ // Reuse the exact master text metrics instead of browser defaults in step 3.
+ el.style.fontFamily=masterStyle.fontFamily;
+ el.style.letterSpacing=masterStyle.letterSpacing;
+ el.style.wordSpacing=masterStyle.wordSpacing;
+ el.style.textTransform=masterStyle.textTransform;
  el.style.left=s.x+'%';el.style.top=s.y+'%';
  el.style.width='70%';el.style.maxWidth='70%';
  el.style.transform='translate(-50%,-50%)';
@@ -622,7 +632,7 @@ function styleCaptionOverlay(el,scale){
  el.style.lineHeight='1.15';
  el.style.whiteSpace='pre-wrap';
  el.style.overflowWrap='anywhere';
- el.style.textWrap='balance';
+ el.style.textWrap=masterStyle.textWrap||'balance';
  el.style.padding='0';
  el.style.webkitTextStroke='0px';
  applyVariantOutline(el,s,scale);
