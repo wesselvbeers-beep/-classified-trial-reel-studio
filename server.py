@@ -197,6 +197,7 @@ class Render(BaseModel):
  full_caps:bool=False
  italic:bool=False
  outline:bool=True
+ shadow:bool=True
  outline_width:float=2
  outline_fade:float=2
  shadow_distance:float=0
@@ -249,11 +250,11 @@ def render(data:Render):
   border=max(0,min(20,int(round(data.outline_width)))) if data.outline else 0
   fade=max(0,min(20,int(round(data.outline_fade)))) if data.outline else 0
   vf+=f",drawtext=fontfile={font}:textfile={txtfile.as_posix()}:fontcolor=white:fontsize={int(w*.055)}:x=(w-text_w)/2:y={y}:borderw={border}:bordercolor=black@1"
-  distance=max(0,min(40,float(data.shadow_distance))) if data.outline else 0
+  distance=max(0,min(40,float(data.shadow_distance))) if data.shadow else 0
   angle=math.radians(float(data.shadow_angle)%360)
   shadow_x=int(round(math.cos(angle)*distance))
   shadow_y=int(round(math.sin(angle)*distance))
-  if distance or fade:
+  if data.shadow and (distance or fade):
    vf+=f":shadowcolor=black@0.75:shadowx={shadow_x}:shadowy={shadow_y}"
   if data.textbar:vf+=':box=1:boxcolor=black@0.7:boxborderw=20'
   name=re.sub(r'[^A-Za-z0-9_-]','_',data.name)[:80] or 'Trial_Reel'
