@@ -723,10 +723,11 @@ function switchWorkspace(which){
  if(which==='captions'&&!$('captionWorkspace').classList.contains('hidden'))return;
  if(which==='captions'&&!variantItems.length){$('variantGenerationInfo').textContent='Genereer eerst on-screen teksten voor je varianten.';switchWorkspace('variants');return;}
  if(which==='captions'){$('video').pause();$('variantVideo').pause();$('masterWorkspace').classList.add('hidden');$('variantWorkspace').classList.add('hidden');$('captionWorkspace').classList.remove('hidden');$('switchMaster').classList.remove('active');$('switchVariants').classList.remove('active');$('switchCaptions').classList.add('active');$('workflowIndicator').textContent='CAPTIONS · 3 / 3';renderCaptionGallery();syncCaptionVideo();saveProjectLocally();return;}
- if(which==='variants'&&(!file||!id)){
-  $('masterStatus').textContent='Upload eerst een video en wacht tot de upload gereed is.';return;
+ if(which==='variants'&&(!file||(!id&&!uploadCompletion))){
+  $('masterStatus').textContent='Upload eerst een video.';return;
  }
  if(which==='variants'){
+  activeVariant=0;
   masterConfirmed=true;$('video').pause();
   $('masterWorkspace').classList.add('hidden');$('captionWorkspace').classList.add('hidden');$('variantWorkspace').classList.remove('hidden');
   $('workflowIndicator').textContent='VARIANTEN · 2 / 3';$('exportTop').textContent='Varianten';$('exportTop').disabled=true;
@@ -737,6 +738,7 @@ function switchWorkspace(which){
    // Do not auto-generate or replace user work when switching screens.
    $('variantGenerationInfo').textContent='Vul voorbeeldzinnen in en klik op Genereer teksten.';
   }else{drawVariantList();updateVariantPreview();}
+  if(!variantItems.length)updateVariantPreview();
  }else{
   $('variantVideo').pause();
   $('variantWorkspace').classList.add('hidden');$('captionWorkspace').classList.add('hidden');$('masterWorkspace').classList.remove('hidden');
