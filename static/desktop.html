@@ -565,17 +565,86 @@ function syncVariantFromMaster(){
  $('variantClock').textContent=fmt(Math.max(0,v.currentTime-start))+' / '+fmt(end-start);
  $('variantTimecode').textContent=$('variantClock').textContent;
 }
+let captionItems=[],captionSelected=new Set(),captionActive=0;
+function setEmojiButtons(prefix,enabled){
+ $(prefix+'On').classList.toggle('active',enabled);
+ $(prefix+'Off').classList.toggle('active',!enabled);
+}
+function captionCurrentText(i){return String(captionItems[i]||'')}
+function syncCaptionVideo(){
+ const v=$('captionVideo');if(url&&v.src!==new URL(url,location.href).href)v.src=url;
+ v.style.objectFit=fit;v.style.filter=$('video').style.filter;
+ v.style.transform=isVariantMirrored(captionActive)?'scaleX(-1)':($('video').style.transform||'none');
+ if(v.readyState>=1&&(v.currentTime<start||v.currentTime>end))v.currentTime=start;
+ $('captionVideoText').textContent=variantSettings.fullCaps?(variantItems[captionActive]||'').toUpperCase():(variantItems[captionActive]||'');
+ $('captionClock').textContent=fmt(Math.max(0,v.currentTime-start))+' / '+fmt(end-start);
+}
+function renderCaptionGallery(){
+ const box=$('captionGallery');box.replaceChildren();
+ $('captionCount').textContent='('+variantItems.length+')';
+ const frag=document.createDocumentFragment();
+ variantItems.forEach((onscreen,i)=>{
+  const card=document.createElement('div');card.className='caption-card'+(i===captionActive?' active':'');
+  const image=document.createElement('div');image.className='caption-card-image';
+  if(variantThumb)image.style.backgroundImage='url('+variantThumb+')';
+  const overlay=document.createElement('div');overlay.className='caption-on-screen';overlay.textContent=variantSettings.fullCaps?onscreen.toUpperCase():onscreen;
+  if(isVariantMirrored(i))image.style.backgroundPosition='center';
+  const check=document.createElement('input');check.type='checkbox';check.className='caption-card-check';check.checked=captionSelected.has(i);check.onclick=e=>e.stopPropagation();check.onchange=()=>{if(check.checked)captionSelected.add(i);else captionSelected.delete(i);updateCaptionSelection()};
+  image.append(overlay,check);image.onclick=()=>{captionActive=i;updateCaptionSelection();syncCaptionVideo()};
+  const body=document.createElement('div');body.className='caption-card-body';const label=document.createElement('b');label.textContent='VARIANT '+String(i+1).padStart(2,'0');
+  const field=document.createElement('textarea');field.className='caption-card-text';field.value=captionCurrentText(i);field.placeholder='Nog geen caption';field.onfocus=()=>{captionActive=i;updateCaptionSelection();syncCaptionVideo()};field.oninput=()=>{captionItems[i]=field.value;if(captionActive===i)$('captionEditor').value=field.value;countCaptionChars();saveProjectLocally()};
+  const footer=document.createElement('div');footer.className='caption-card-footer';const count=document.createElement('span');count.textContent=captionCurrentText(i).length+' tekens';field.addEventListener('input',()=>count.textContent=field.value.length+' tekens');
+  const copy=document.createElement('button');copy.type='button';copy.textContent='Kopieer';copy.onclick=()=>navigator.clipboard.writeText(captionCurrentText(i)).then(()=>$('captionStatus').textContent='Caption gekopieerd.').catch(()=>$('captionStatus').textContent='Kopiëren niet toegestaan.');
+  footer.append(count,copy);body.append(label,field,footer);card.append(image,body);frag.append(card);
+ });box.append(frag);updateCaptionSelection();
+}
+function countCaptionChars(){$('captionCounter').textContent=$('captionEditor').value.length+' tekens'}
+function updateCaptionSelection(){
+ $('captionGallery').querySelectorAll('.caption-card').forEach((card,i)=>card.classList.toggle('active',i===captionActive));
+ $('captionEditor').value=captionCurrentText(captionActive);countCaptionChars();
+ $('captionSelectAll').checked=variantItems.length>0&&captionSelected.size===variantItems.length;
+ $('captionSelectAll').indeterminate=captionSelected.size>0&&captionSelected.size<variantItems.length;
+ const summary=$('captionSelectedSummary');summary.replaceChildren();
+ [...captionSelected].sort((a,b)=>a-b).forEach(i=>{const item=document.createElement('div');item.className='caption-selected-row';item.textContent='VARIANT '+String(i+1).padStart(2,'0')+' · '+(captionCurrentText(i)||'Nog geen caption');summary.append(item)});
+ $('captionExport').textContent='Exporteer geselecteerde captions ('+captionSelected.size+')';
+}
+async function generateCaptions(selectedOnly=false){
+ if(!variantItems.length){$('captionStatus').textContent='Maak eerst on-screen teksten in venster 2.';return}
+ const indices=selectedOnly?[...captionSelected].sort((a,b)=>a-b):variantItems.map((_,i)=>i);
+ if(!indices.length){$('captionStatus').textContent='Selecteer eerst een of meer varianten.';return}
+ const button=selectedOnly?$('regenerateCaptions'):$('generateCaptions');button.disabled=true;
+ const focus=[...document.querySelectorAll('.caption-focus input:checked')].map(el=>el.value);
+ let successes=0,failures=0;
+ try{
+  for(const i of indices){
+   if(!variantItems[i]?.trim()){failures++;continue}
+   $('captionStatus').textContent='Caption '+(successes+failures+1)+' / '+indices.length+' genereren…';
+   try{
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),85000);
+    let response;try{response=await fetch('/api/generate-caption',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({onscreen_text:variantItems[i],language:$('captionLanguage').value,tone:$('captionTone').value,focus,allow_emojis:$('captionAllowEmojis').checked,instructions:$('captionInstructions').value}),signal:controller.signal})}finally{clearTimeout(timer)}
+    const data=await response.json();if(!response.ok)throw Error(data.detail||'AI-fout');
+    if(typeof data.caption!=='string'||!data.caption.trim())throw Error('Lege caption');
+    captionItems[i]=data.caption.trim();successes++;
+   }catch(err){failures++;$('captionStatus').textContent='Fout bij variant '+(i+1)+': '+err.message}
+  }
+  renderCaptionGallery();saveProjectLocally();
+  $('captionStatus').textContent=successes+' captions gegenereerd'+(failures?' · '+failures+' niet gelukt (bestaande captions behouden)':'')+'.';
+ }finally{button.disabled=false}
+}
 function switchWorkspace(which){
  if(which==='master'&&!$('masterWorkspace').classList.contains('hidden'))return;
  if(which==='variants'&&!$('variantWorkspace').classList.contains('hidden'))return;
+ if(which==='captions'&&!$('captionWorkspace').classList.contains('hidden'))return;
+ if(which==='captions'&&!variantItems.length){$('variantGenerationInfo').textContent='Genereer eerst on-screen teksten voor je varianten.';switchWorkspace('variants');return;}
+ if(which==='captions'){$('video').pause();$('variantVideo').pause();$('masterWorkspace').classList.add('hidden');$('variantWorkspace').classList.add('hidden');$('captionWorkspace').classList.remove('hidden');$('switchMaster').classList.remove('active');$('switchVariants').classList.remove('active');$('switchCaptions').classList.add('active');$('workflowIndicator').textContent='CAPTIONS · 3 / 3';renderCaptionGallery();syncCaptionVideo();saveProjectLocally();return;}
  if(which==='variants'&&(!file||!id)){
   $('masterStatus').textContent='Upload eerst een video en wacht tot de upload gereed is.';return;
  }
  if(which==='variants'){
   masterConfirmed=true;$('video').pause();
-  $('masterWorkspace').classList.add('hidden');$('variantWorkspace').classList.remove('hidden');
+  $('masterWorkspace').classList.add('hidden');$('captionWorkspace').classList.add('hidden');$('variantWorkspace').classList.remove('hidden');
   $('workflowIndicator').textContent='VARIANTEN · 2 / 3';$('exportTop').textContent='Varianten';$('exportTop').disabled=true;
-  $('switchMaster').classList.remove('active');$('switchVariants').classList.add('active');
+  $('switchMaster').classList.remove('active');$('switchCaptions').classList.remove('active');$('switchVariants').classList.add('active');
   syncVariantFromMaster();
   if(!variantItems.length&&Number($('variantCount').value)>0)ensureVariantSlots(Number($('variantCount').value));
   if(!variantItems.length){
@@ -584,9 +653,9 @@ function switchWorkspace(which){
   }else{drawVariantList();updateVariantPreview();}
  }else{
   $('variantVideo').pause();
-  $('variantWorkspace').classList.add('hidden');$('masterWorkspace').classList.remove('hidden');
+  $('variantWorkspace').classList.add('hidden');$('captionWorkspace').classList.add('hidden');$('masterWorkspace').classList.remove('hidden');
   $('workflowIndicator').textContent='MASTERCLIP · 1 / 2';$('exportTop').textContent='Naar varianten';$('exportTop').disabled=true;
-  $('switchVariants').classList.remove('active');$('switchMaster').classList.add('active');
+  $('switchVariants').classList.remove('active');$('switchCaptions').classList.remove('active');$('switchMaster').classList.add('active');
   refresh();panel();
  }
  saveProjectLocally();
@@ -596,6 +665,27 @@ $('confirmMaster').onclick=openVariants;
 $('backToMaster').onclick=()=>switchWorkspace('master');
 $('switchMaster').onclick=()=>switchWorkspace('master');
 $('switchVariants').onclick=()=>switchWorkspace('variants');
+$('switchCaptions').onclick=()=>switchWorkspace('captions');
+$('backToVariants').onclick=()=>switchWorkspace('variants');
+for(const [prefix,checkbox] of [['emoji','variantAllowEmojis'],['captionEmoji','captionAllowEmojis']]){
+ $(prefix+'On').onclick=()=>{$(checkbox).checked=true;setEmojiButtons(prefix,true);saveProjectLocally()};
+ $(prefix+'Off').onclick=()=>{$(checkbox).checked=false;setEmojiButtons(prefix,false);saveProjectLocally()};
+}
+$('generateCaptions').onclick=()=>generateCaptions(false);
+$('regenerateCaptions').onclick=()=>generateCaptions(true);
+$('captionSelectAll').onchange=e=>{captionSelected=e.target.checked?new Set(variantItems.map((_,i)=>i)):new Set();renderCaptionGallery()};
+$('captionClearSelection').onclick=()=>{captionSelected.clear();renderCaptionGallery()};
+$('captionEditor').oninput=e=>{captionItems[captionActive]=e.target.value;countCaptionChars();const field=$('captionGallery').querySelectorAll('.caption-card-text')[captionActive];if(field)field.value=e.target.value;saveProjectLocally()};
+$('captionCopy').onclick=()=>navigator.clipboard.writeText(captionCurrentText(captionActive)).then(()=>$('captionStatus').textContent='Caption gekopieerd.').catch(()=>$('captionStatus').textContent='Kopiëren niet toegestaan.');
+$('captionExport').onclick=()=>{
+ const indices=[...captionSelected].sort((a,b)=>a-b);if(!indices.length){$('captionStatus').textContent='Selecteer eerst varianten.';return}
+ const rows=['Variant,On-screen tekst,Caption',...indices.map(i=>[i+1,variantItems[i]||'',captionCurrentText(i)].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(','))];
+ const blob=new Blob(['\\uFEFF'+rows.join('\\r\\n')],{type:'text/csv;charset=utf-8'});const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='trial_reel_captions.csv';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
+};
+$('captionPlay').onclick=()=>{const v=$('captionVideo');if(v.paused)v.play().catch(()=>{});else v.pause()};
+$('captionVideo').ontimeupdate=()=>{const v=$('captionVideo');if(v.currentTime>=end)v.pause();$('captionSeek').value=100*clamp((v.currentTime-start)/Math.max(.01,end-start),0,1);$('captionClock').textContent=fmt(Math.max(0,v.currentTime-start))+' / '+fmt(end-start)};
+$('captionSeek').oninput=e=>{$('captionVideo').currentTime=start+(end-start)*e.target.value/100};
+
 $('generateVariants').onclick=makeVariants;
 let originalEditedText='';$('variantText').onfocus=()=>{originalEditedText=variantItems[activeVariant]||''};$('variantText').onblur=()=>{const current=variantItems[activeVariant]||'';if(current!==originalEditedText){rememberFeedback('rejected',originalEditedText);rememberFeedback('preferred',current)}};
 $('variantText').oninput=e=>{variantItems[activeVariant]=e.target.value;$('variantOverlay').textContent=variantSettings.fullCaps?e.target.value.toUpperCase():e.target.value;applyVariantOutline($('variantOverlay'),variantSettings);drawVariantList()};
@@ -635,7 +725,7 @@ $('variantVideo').onplay=()=>{$('variantPlay').textContent='Ⅱ'};$('variantVide
 $('variantRender').onclick=async()=>{if(busy)return;const status=$('variantRenderStatus');if(!id){status.textContent='Upload eerst een video.';return}busy=true;$('variantRender').disabled=true;status.textContent='Render bezig…';try{const res=await fetch('/api/render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,start,length:end-start,layout:fit,blur_background:blurEnabled,blur_intensity:blurIntensity,mirror_half:alternateMirror,contrast:grade.contrast,shadows:grade.shadows,saturation:grade.saturation,lut_id:lutId||null,texts:variantItems,full_caps:!!variantSettings.fullCaps,italic:!!variantSettings.italic,outline:!!variantSettings.outline,shadow:variantSettings.shadow!==false,outline_width:variantSettings.outlineWidth??2,outline_fade:variantSettings.outlineFade??2,shadow_distance:variantSettings.shadowDistance??0,shadow_opacity:variantSettings.shadowOpacity??95,shadow_angle:variantSettings.shadowAngle??135,name:$('variantName').value,resolution:$('variantResolution').value,fps:+$('variantFps').value,csv:true,position:variantSettings.y<35?'top':variantSettings.y>65?'bottom':'center'})});if(!res.ok)throw Error((await res.text()).slice(0,240));const result=await res.json();status.replaceChildren();const link=document.createElement('a');link.href=result.download;link.download='Trial_Reels.zip';link.textContent='Download ZIP met MP4-varianten';link.style.color='#fff';status.append('Gereed · ',link)}catch(err){status.textContent='Renderfout: '+err.message}finally{busy=false;$('variantRender').disabled=false}};
 
 const undoStack=[],redoStack=[];let historyApplying=false,historyStart=null;
-function snapshot(){return JSON.stringify({variantItems:[...variantItems],activeVariant,variantSettings:{...variantSettings},start,end,drop,dropLocked,clipOffset,videoPlaced,audioPlaced,fit,mirror,blurEnabled,blurIntensity,showText,caption,lutId,grade:{...grade},volume:$('video').volume,muted:$('video').muted})}
+function snapshot(){return JSON.stringify({variantItems:[...variantItems],captionItems:[...captionItems],activeVariant,variantSettings:{...variantSettings},start,end,drop,dropLocked,clipOffset,videoPlaced,audioPlaced,fit,mirror,blurEnabled,blurIntensity,showText,caption,lutId,grade:{...grade},volume:$('video').volume,muted:$('video').muted})}
 function updateHistoryButtons(){$('undoBtn').disabled=!undoStack.length;$('redoBtn').disabled=!redoStack.length}
 function recordPrevious(before){if(historyApplying||!before)return;const after=snapshot();if(before===after)return;if(undoStack[undoStack.length-1]!==before)undoStack.push(before);if(undoStack.length>100)undoStack.shift();redoStack.length=0;updateHistoryButtons()}
 function restoreSnapshot(value){historyApplying=true;try{const s=JSON.parse(value);if(Array.isArray(s.variantItems)){variantItems=[...s.variantItems];activeVariant=Math.min(s.activeVariant||0,Math.max(0,variantItems.length-1));Object.assign(variantSettings,s.variantSettings||{});$('variantCount').value=variantItems.length||'';updateVariantPreview()}start=s.start;end=s.end;drop=s.drop;dropLocked=s.dropLocked;clipOffset=s.clipOffset;videoPlaced=s.videoPlaced;audioPlaced=s.audioPlaced;fit=s.fit;mirror=s.mirror;showText=s.showText;caption=s.caption;lutId=s.lutId;Object.assign(grade,s.grade);$('video').volume=s.volume;$('video').muted=s.muted;$('video').style.objectFit=fit;$('video').style.transform=mirror?'scaleX(-1)':'none';$('caption').textContent=showText?caption:'';applyGrade();refresh();document.querySelectorAll('.step-section[open]').forEach(section=>{tab=+section.id.replace('step','');panel()})}finally{historyApplying=false;updateHistoryButtons()}}
@@ -675,7 +765,7 @@ const projectStorageKey='classified-trial-reel-studio-project-v1';
 function openProjectDB(){return new Promise((resolve,reject)=>{const req=indexedDB.open('classified-trial-reel-studio',1);req.onupgradeneeded=()=>req.result.createObjectStore('files');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
 async function persistProjectFile(f){try{const db=await openProjectDB();await new Promise((resolve,reject)=>{const tx=db.transaction('files','readwrite');tx.objectStore('files').put(f,'active');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});projectFileSaved=true;db.close()}catch(err){projectFileSaved=false;$('status').textContent='Video kon niet lokaal worden opgeslagen. Bewaar een kopie van je bestand.';console.warn('Project video autosave failed',err)}}
 async function getSavedProjectFile(){const db=await openProjectDB();try{return await new Promise((resolve,reject)=>{const req=db.transaction('files','readonly').objectStore('files').get('active');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}finally{db.close()}}
-function projectState(){return {version:1,source:file?.name||'',start,end,drop,dropLocked,clipOffset,videoPlaced,audioPlaced,fit,mirror,blurEnabled,blurIntensity,grade:{...grade},caption,lutId,variantItems:[...variantItems],activeVariant,variantSettings:{...variantSettings},guideInstagram:$('guideInstagram').checked,guideTikTok:$('guideTikTok').checked,alternateMirror,variantCount:$('variantCount').value,variantTheme:$('variantTheme').value,variantGenre:$('variantGenre').value,variantVoice:$('variantVoice').value,variantAllowEmojis:$('variantAllowEmojis').checked,variantName:$('variantName').value,variantResolution:$('variantResolution').value,variantFps:$('variantFps').value,masterConfirmed,volume:$('video').volume,muted:$('video').muted}}
+function projectState(){return {version:1,source:file?.name||'',start,end,drop,dropLocked,clipOffset,videoPlaced,audioPlaced,fit,mirror,blurEnabled,blurIntensity,grade:{...grade},caption,lutId,variantItems:[...variantItems],activeVariant,variantSettings:{...variantSettings},guideInstagram:$('guideInstagram').checked,guideTikTok:$('guideTikTok').checked,alternateMirror,variantCount:$('variantCount').value,variantTheme:$('variantTheme').value,variantGenre:$('variantGenre').value,variantVoice:$('variantVoice').value,variantAllowEmojis:$('variantAllowEmojis').checked,captionAllowEmojis:$('captionAllowEmojis').checked,captionLanguage:$('captionLanguage').value,captionTone:$('captionTone').value,captionInstructions:$('captionInstructions').value,variantName:$('variantName').value,variantResolution:$('variantResolution').value,variantFps:$('variantFps').value,masterConfirmed,volume:$('video').volume,muted:$('video').muted}}
 function saveProjectLocally(){if(restoringProject||!file)return;try{const state=JSON.stringify(projectState());if(state!==lastAutosave){localStorage.setItem(projectStorageKey,state);lastAutosave=state}}catch(err){console.warn('Project state autosave failed',err)}}
 async function restoreLocalProject(){
  let saved;try{saved=JSON.parse(localStorage.getItem(projectStorageKey)||'null')}catch{return}
@@ -691,9 +781,9 @@ async function restoreLocalProject(){
   clipOffset=saved.clipOffset||0;videoPlaced=saved.videoPlaced!==false;audioPlaced=saved.audioPlaced!==false;
   fit=saved.fit||'contain';mirror=!!saved.mirror;blurEnabled=!!saved.blurEnabled;blurIntensity=saved.blurIntensity??24;
   Object.assign(grade,saved.grade||{});caption=saved.caption||'';lutId=saved.lutId||'';
-  variantItems=Array.isArray(saved.variantItems)?saved.variantItems:[];activeVariant=clamp(saved.activeVariant||0,0,Math.max(0,variantItems.length-1));
+  variantItems=Array.isArray(saved.variantItems)?saved.variantItems:[];captionItems=Array.isArray(saved.captionItems)?saved.captionItems:[];activeVariant=clamp(saved.activeVariant||0,0,Math.max(0,variantItems.length-1));
   Object.assign(variantSettings,saved.variantSettings||{});variantSettings.outlineWidth=Math.min(3,Math.max(0,Number(variantSettings.outlineWidth)||0));$('guideInstagram').checked=!!saved.guideInstagram;$('guideTikTok').checked=!!saved.guideTikTok;updateSocialGuides();alternateMirror=!!saved.alternateMirror;variantSelected.clear();
-  $('variantCount').value=saved.variantCount||5;$('variantTheme').value=saved.variantTheme||'';$('variantGenre').value=saved.variantGenre||'';$('variantVoice').value=saved.variantVoice==='event'?'event':'artist';$('variantAllowEmojis').checked=!!saved.variantAllowEmojis;
+  $('variantCount').value=saved.variantCount||5;$('variantTheme').value=saved.variantTheme||'';$('variantGenre').value=saved.variantGenre||'';$('variantVoice').value=saved.variantVoice==='event'?'event':'artist';$('variantAllowEmojis').checked=!!saved.variantAllowEmojis;setEmojiButtons('emoji',$('variantAllowEmojis').checked);$('captionAllowEmojis').checked=saved.captionAllowEmojis!==false;setEmojiButtons('captionEmoji',$('captionAllowEmojis').checked);$('captionLanguage').value=saved.captionLanguage||'en';$('captionTone').value=saved.captionTone||'underground';$('captionInstructions').value=saved.captionInstructions||'';
   $('variantName').value=saved.variantName||'Classified_Trial';
   $('variantResolution').value=saved.variantResolution||'1080x1920';$('variantFps').value=saved.variantFps||25;
   $('video').volume=saved.volume??1;$('video').muted=!!saved.muted;
