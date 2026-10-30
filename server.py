@@ -51,6 +51,7 @@ class TextVariantsRequest(BaseModel):
  count:int=5
  genre:str=''
  allow_emojis:bool=False
+ voice:str='artist'
 
 @app.get('/api/generate-texts/status')
 def text_generation_status():
@@ -61,6 +62,7 @@ def generate_texts(data:TextVariantsRequest):
  examples=list(dict.fromkeys(s.strip() for s in data.examples if s.strip()))
  if not examples:raise HTTPException(400,'Vul eerst voorbeeldzinnen in')
  if not 1<=data.count<=100:raise HTTPException(400,'Aantal moet tussen 1 en 100 liggen')
+ if data.voice not in ('artist','event'):raise HTTPException(400,'Ongeldige tone-of-voice')
  key=os.getenv('OPENAI_API_KEY','').strip()
  if not key:raise HTTPException(503,'AI-tekstgeneratie is nog niet geconfigureerd. Voeg OPENAI_API_KEY toe aan de Render-omgevingsvariabelen.')
  instruction=('You write authentic on-screen text for short raw hardstyle and uptempo fan videos, NOT advertising copy. '
@@ -68,7 +70,7 @@ def generate_texts(data:TextVariantsRequest):
  'specific, dry, sometimes cheeky, understated, immediate and believable. '
  'Treat the supplied examples as the PRIMARY reference for language, sentence structure, humor, attitude, '
  'capitalization and level of intensity. Match their vibe without copying or closely paraphrasing them. '
- 'Never sound like a brand, promoter, inspirational speaker or marketing agency. '
+ 'Never sound like an inspirational speaker or marketing agency. '
  'Avoid generic hype and filler such as PURE ENERGY, THE CROWD GOES WILD, UNREAL MOMENT, '
  'INSANE VIBES, NEXT LEVEL, THIS IS WHAT WE LIVE FOR, LEGENDARY, UNMATCHED, '
  'GET READY, EXPERIENCE THE, and similar phrases unless explicitly present in user examples. '
@@ -81,13 +83,14 @@ def generate_texts(data:TextVariantsRequest):
  'When a music genre is provided by the user, treat it as an important creative keyword and naturally weave the exact genre phrase into a meaningful share of the captions (roughly half to three quarters), but not every caption. ' 
  'Keep genre mentions grammatically natural and avoid forcing the same phrase structure repeatedly. ' 
  'If allow_emojis is true, emojis are permitted sparingly when natural and relevant; do not force emojis into every caption. If allow_emojis is false, never use emojis. ' 
+ 'For EVENT voice, write as an event or promoter sharing footage of artists and crowd, using neutral observations or the event perspective. NEVER speak as the performing artist or use first-person singular (I, me, my, mine, I\'m, I\'ve). Avoid inventing a specific event name or claiming the event performed the music. For ARTIST voice, natural first-person artist perspective is allowed but not mandatory. Keep the same authentic, non-corporate scene language in both modes. ' 
  'Return exactly the requested number of distinct, original captions. '
  'No numbering, hashtags, marketing buzzwords or explanations. '
  'Return valid JSON only: {"texts":["..."]}.')
  payload={'model':os.getenv('OPENAI_TEXT_MODEL','gpt-4o-mini'),'temperature':0.85,
   'response_format':{'type':'json_object'},
   'messages':[{'role':'system','content':instruction},
-   {'role':'user','content':json.dumps({'examples':examples[:30],'approved_style_references':approved_caption_references(),'count':data.count,'music_genre':data.genre.strip()[:80],'allow_emojis':data.allow_emojis,'instructions':'Return exactly count distinct captions. Do not copy examples.'})}]}
+   {'role':'user','content':json.dumps({'examples':examples[:30],'approved_style_references':approved_caption_references(),'count':data.count,'music_genre':data.genre.strip()[:80],'allow_emojis':data.allow_emojis,'voice':data.voice,'instructions':'Return exactly count distinct captions. Do not copy examples.'})}]}
  req=urllib.request.Request('https://api.openai.com/v1/chat/completions',
   data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
  try:
@@ -109,6 +112,7 @@ def generate_texts(data:TextVariantsRequest):
     (r'\byesterday\b','that day')
    ]:
     t=re.sub(pattern,replacement,t,flags=re.IGNORECASE)
+   if data.voice=='event' and re.search(r"\b(i|me|my|mine|i'm|i’ve|i've|myself)\b",t,flags=re.IGNORECASE):continue
    if t and t[-1] not in '.!?':t+='.'
    norm=t.casefold()
    if t and norm not in seen and norm not in source:
