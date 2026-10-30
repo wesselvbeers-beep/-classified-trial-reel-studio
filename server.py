@@ -128,6 +128,45 @@ class CaptionRequest(BaseModel):
  excluded_captions:list[str]=[]
  previous_caption:str=''
 
+class CaptionBatchRequest(BaseModel):
+ texts:list[str]
+ language:str='en'
+ tone:str='minimal'
+ focus:list[str]=[]
+ allow_emojis:bool=False
+ instructions:str=''
+ min_words:int=2
+ max_words:int=6
+ excluded_captions:list[str]=[]
+
+@app.post('/api/generate-captions-batch')
+def generate_captions_batch(data:CaptionBatchRequest):
+ if not 1<=len(data.texts)<=100:raise HTTPException(400,'Kies 1 tot 100 varianten')
+ key=os.getenv('OPENAI_API_KEY','').strip()
+ if not key:raise HTTPException(503,'OpenAI API-sleutel ontbreekt')
+ min_words=max(1,min(20,data.min_words))
+ max_words=max(min_words,min(20,data.max_words))
+ system=('Generate one short, natural, casual social media caption for EACH supplied on-screen text. '
+ 'Return exactly the same number of captions, in the same order. '
+ 'Keep each caption basic and non-corny, like a real raw hardstyle or uptempo fan. '
+ 'All captions must be different in meaning and wording. Avoid generic marketing phrases. '
+ 'Never use beat or beats. No hashtags. No emojis unless explicitly allowed. '
+ 'Respect the word count range for every caption. Do not copy the on-screen text verbatim. '
+ 'Return ONLY JSON of the form {"captions":["caption 1","caption 2"]}.')
+ payload={'model':os.getenv('OPENAI_TEXT_MODEL','gpt-4o-mini'),'temperature':0.8,'response_format':{'type':'json_object'},
+ 'messages':[{'role':'system','content':system},{'role':'user','content':json.dumps({'texts':[t[:300] for t in data.texts],'language':data.language,'tone':data.tone,'focus':data.focus[:8],'allow_emojis':data.allow_emojis,'instructions':data.instructions[:400],'min_words':min_words,'max_words':max_words,'excluded_captions':data.excluded_captions[-100:]})}]}
+ req=urllib.request.Request('https://api.openai.com/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
+ try:
+  with urllib.request.urlopen(req,timeout=15) as response:result=json.load(response)
+  captions=json.loads(result['choices'][0]['message']['content']).get('captions',[])
+  if not isinstance(captions,list):raise ValueError('Invalid captions')
+  return {'captions':[re.sub(r'\\s+',' ',str(c)).strip()[:180] for c in captions]}
+ except urllib.error.HTTPError as err:
+  if err.code==429:raise HTTPException(429,'API-limiet bereikt')
+  raise HTTPException(502,'AI-captiongeneratie niet beschikbaar')
+ except (urllib.error.URLError,TimeoutError,KeyError,ValueError):
+  raise HTTPException(502,'AI-captiongeneratie tijdelijk niet beschikbaar')
+
 @app.post('/api/generate-caption')
 def generate_caption(data:CaptionRequest):
  key=os.getenv('OPENAI_API_KEY','').strip()
