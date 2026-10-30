@@ -45,6 +45,10 @@ class TextVariantsRequest(BaseModel):
  examples:list[str]
  count:int=5
 
+@app.get('/api/generate-texts/status')
+def text_generation_status():
+ return {'configured':bool(os.getenv('OPENAI_API_KEY','').strip())}
+
 @app.post('/api/generate-texts')
 def generate_texts(data:TextVariantsRequest):
  examples=list(dict.fromkeys(s.strip() for s in data.examples if s.strip()))
