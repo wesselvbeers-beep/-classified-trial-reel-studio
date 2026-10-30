@@ -700,7 +700,7 @@ function localCaptionFallback(onscreen,i,minWords,maxWords,used,language){
  const pool=language==='nl'?nl:en;
  for(let k=0;k<pool.length;k++){const candidate=pool[(i*7+k)%pool.length];const count=captionWordCount(candidate),key=captionUniqueKey(candidate);if(count>=minWords&&count<=maxWords&&!used.has(key)){used.add(key);return candidate}}
  const seeds=language==='nl'?['Deze track','Die kick','Dat moment','Dit geluid','Deze drop']:['This track','That kick','That moment','This sound','That drop'];
- for(let k=0;k<300;k++){let candidate=seeds[(i+k)%seeds.length]+' '+(language==='nl'?'blijft lekker hangen':'is worth replaying')+(k?' '+(k+1):'')+'.';let tokens=candidate.split(/\\s+/);candidate=tokens.slice(0,maxWords).join(' ');while(captionWordCount(candidate)<minWords)candidate+=' '+(language==='nl'?'echt':'again');const key=captionUniqueKey(candidate);if(!used.has(key)){used.add(key);return candidate}}
+ for(let k=0;k<300;k++){let candidate=seeds[(i+k)%seeds.length]+' '+(language==='nl'?'blijft lekker hangen':'is worth replaying')+(k?' '+(k+1):'')+'.';let tokens=candidate.split(/\s+/);candidate=tokens.slice(0,maxWords).join(' ');while(captionWordCount(candidate)<minWords)candidate+=' '+(language==='nl'?'echt':'again');const key=captionUniqueKey(candidate);if(!used.has(key)){used.add(key);return candidate}}
  return '';
 }
 async function generateCaptions(selectedOnly=false){
