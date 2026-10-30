@@ -192,6 +192,9 @@
 #captionWorkspace .caption-on-screen,#captionWorkspace .caption-video-text{box-sizing:border-box!important;margin:0!important;border:0!important;letter-spacing:normal!important;text-transform:none!important;-webkit-text-fill-color:currentColor!important}
 #captionWorkspace .caption-card-image .caption-on-screen{padding:0!important}
 #captionWorkspace .caption-video-frame .caption-video-text{padding:0!important}
+#captionWorkspace .caption-on-screen,#captionWorkspace .caption-video-text{-webkit-text-stroke:0!important;text-shadow:none}
+#captionWorkspace .caption-on-screen::before,#captionWorkspace .caption-video-text::before{content:attr(data-text);position:absolute;inset:0;display:block;white-space:inherit;overflow-wrap:inherit;text-align:inherit;font:inherit;line-height:inherit;letter-spacing:inherit;color:transparent;-webkit-text-fill-color:transparent;-webkit-text-stroke:var(--outline-stroke,0px) #000;filter:blur(var(--outline-blur,0px));z-index:-1;pointer-events:none;text-shadow:none!important}
+#captionWorkspace [data-outline="off"]::before{display:none}
 </style></head><body><header><div class="logo">C.</div><div class="brand">TRIAL REEL STUDIO<small>CLASSIFIED · DESKTOP BETA 2.0</small></div><div class="nav" id="nav"></div><button class="btn" id="undoBtn" title="Command + Z" disabled>↶ Ongedaan</button><button class="btn" id="redoBtn" title="Shift + Command + Z" disabled>↷ Herstellen</button><button class="btn" id="save">Project opslaan</button><nav class="workspace-switcher" aria-label="Wissel tussen werkvensters"><button class="workspace-tab active" id="switchMaster" type="button">1 · Masterclip</button><button class="workspace-tab" id="switchVariants" type="button">2 · Varianten & teksten</button><button class="workspace-tab" id="switchCaptions" type="button">3 · Caption generator</button></nav><span class="workflow-indicator" id="workflowIndicator">MASTERCLIP · 1 / 3</span><button class="primary" id="exportTop" disabled style="display:none">Naar varianten</button></header>
 <div id="masterWorkspace"><div class="workspace"><aside class="pane"><h3>Media</h3><div class="pad"><div class="upload" id="upload"><strong>↑</strong><b>Video uploaden</b><p>Sleep MP4 / MOV of kies bestand</p><button class="btn" id="choose">Bestand kiezen</button></div><input id="file" type="file" accept=".mp4,.mov" hidden><div class="file" id="fileInfo" draggable="true" title="Sleep naar de tijdlijn">Nog geen video geselecteerd</div><p class="status" id="uploadStatus"></p><h3>Projectmedia</h3><p class="info" id="mediaInfo">Je videobestand verschijnt hier.</p></div></aside>
 <main class="viewer" id="viewer"><div class="viewer-drop-overlay" id="viewerDropOverlay"><div class="viewer-drop-message"><span class="drop-upload-symbol">+</span><strong>Sleep je video hierheen</strong><span>MP4 of MOV · laat los om te importeren</span></div></div><div class="screen"><video id="blurBackground" class="blur-background" muted playsinline preload="metadata" aria-hidden="true"></video><video id="video" playsinline preload="metadata"></video><div class="caption" id="caption"></div><div class="preview-timecode" id="previewTimecode">00:00 / 00:00</div></div><div class="controls"><button class="btn" id="lockDrop" title="Zet de DROP vast op het huidige videoframe">🔒 Lock DROP</button><button class="btn" id="startBtn">↤ Start</button></div><div class="strip-row"><button class="btn" id="stripPlay">▶</button><div class="strip" id="strip"><div class="thumbs" id="thumbs"></div><div class="selected" id="selected"></div><div class="handle" id="left"></div><div class="handle" id="right"></div><div class="drop" id="drop"></div><div class="strip-playhead" id="stripPlayhead" aria-hidden="true"></div></div></div><p class="info" id="trimInfo">Versleep de witte trimhandgrepen en de rode DROP-marker.</p><p class="status" id="status"></p></main>
@@ -620,10 +623,12 @@ function styleCaptionOverlay(el,scale){
  el.style.whiteSpace='pre-wrap';
  el.style.overflowWrap='anywhere';
  el.style.textWrap='balance';
+ el.style.padding='0';
+ el.style.webkitTextStroke='0px';
  applyVariantOutline(el,s,scale);
 }
 function syncCaptionTypography(){
- const stageWidth=$('variantStage').getBoundingClientRect().width||300;
+ const stageWidth=$('variantStage').getBoundingClientRect().width||Math.min(window.innerHeight*.7,670)*9/16;
  const preview=$('captionVideoText');
  styleCaptionOverlay(preview,($('captionVideo').getBoundingClientRect().width||220)/stageWidth);
  $('captionGallery').querySelectorAll('.caption-card').forEach(card=>{
@@ -642,6 +647,7 @@ function syncCaptionVideo(){
  v.style.transform=isVariantMirrored(captionActive)?'scaleX(-1)':($('video').style.transform||'none');
  if(v.readyState>=1&&(v.currentTime<start||v.currentTime>end))v.currentTime=start;
  syncWorkspaceBlur('captionVideo','captionBlurBackground',isVariantMirrored(captionActive));
+ $('captionVideoText').classList.add('variant-overlay');
  $('captionVideoText').textContent=variantSettings.fullCaps?(variantItems[captionActive]||'').toUpperCase():(variantItems[captionActive]||'');
  syncCaptionTypography();
  $('captionClock').textContent=fmt(Math.max(0,v.currentTime-start))+' / '+fmt(end-start);
@@ -657,7 +663,7 @@ function renderCaptionGallery(){
   if(variantThumb)imageBackground.style.backgroundImage='url('+variantThumb+')';
   imageBackground.style.transform=isVariantMirrored(i)?'scaleX(-1)':'none';
   image.append(imageBackground);
-  const overlay=document.createElement('div');overlay.className='caption-on-screen';overlay.textContent=variantSettings.fullCaps?onscreen.toUpperCase():onscreen;
+  const overlay=document.createElement('div');overlay.className='caption-on-screen variant-thumb-caption';overlay.textContent=variantSettings.fullCaps?onscreen.toUpperCase():onscreen;
   const check=document.createElement('input');check.type='checkbox';check.className='caption-card-check';check.checked=captionSelected.has(i);check.onclick=e=>e.stopPropagation();check.onchange=()=>{if(check.checked)captionSelected.add(i);else captionSelected.delete(i);updateCaptionSelection()};
   image.append(overlay,check);image.onclick=()=>{captionActive=i;updateCaptionSelection();syncCaptionVideo()};
   const body=document.createElement('div');body.className='caption-card-body';const label=document.createElement('b');label.textContent='VARIANT '+String(i+1).padStart(2,'0');
