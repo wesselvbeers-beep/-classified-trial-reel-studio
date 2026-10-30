@@ -89,15 +89,24 @@ async function makeVariants(){
  const requested=clamp(Math.round(+$('variantCount').value||1),1,100);
  const examples=[...new Map($('variantTheme').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).map(s=>[s.toLocaleUpperCase(),s])).values()];
  if(!examples.length){info.textContent='Vul eerst voorbeeldzinnen in, één per regel.';return}
- button.disabled=true;button.textContent='AI-teksten genereren…';info.textContent='Nieuwe, unieke alternatieven worden geschreven op basis van jouw voorbeelden.';
+ button.disabled=true;button.textContent='AI-teksten genereren…';info.textContent='Verbinding met AI-generator controleren…';
  try{
-  const response=await fetch('/api/generate-texts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({examples,count:requested})});
+  const statusController=new AbortController();const statusTimer=setTimeout(()=>statusController.abort(),12000);
+  let configResponse;
+  try{configResponse=await fetch('/api/generate-texts/status',{signal:statusController.signal})}finally{clearTimeout(statusTimer)}
+  if(!configResponse.ok)throw Error('De AI-service is niet bereikbaar. Controleer of Render Live is.');
+  const config=await configResponse.json();
+  if(!config.configured)throw Error('AI is nog niet ingesteld. Voeg OPENAI_API_KEY toe onder Render → Environment en sla de wijzigingen op.');
+  info.textContent='AI schrijft nieuwe alternatieven. Dit kan even duren…';
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),90000);
+  let response;
+  try{response=await fetch('/api/generate-texts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({examples,count:requested}),signal:controller.signal})}finally{clearTimeout(timer)}
   const data=await response.json();
   if(!response.ok)throw Error(typeof data.detail==='string'?data.detail:'Genereren mislukt.');
   variantItems=data.texts;
   activeVariant=0;drawVariantList();updateVariantPreview();
   info.textContent=variantItems.length+' unieke, nieuw geschreven teksten gegenereerd'+(variantItems.length<requested?' (minder dan gevraagd; geen duplicaten toegevoegd)':'')+'.';
- }catch(err){info.textContent=err.message}
+ }catch(err){info.textContent=err.name==='AbortError'?'De AI-generator reageert niet op tijd. Probeer opnieuw of controleer Render.':err.message}
  finally{button.disabled=false;button.textContent='Genereer teksten'}
 }
 function drawVariantList(){const box=$('variantList');box.replaceChildren();variantItems.forEach((txt,i)=>{const b=document.createElement('button');b.type='button';b.className='variant-item'+(i===activeVariant?' selected':'');const index=document.createElement('span');index.textContent=String(i+1).padStart(2,'0');const title=document.createElement('span');title.textContent=txt;b.append(index,title);b.onclick=()=>{activeVariant=i;drawVariantList();updateVariantPreview()};box.append(b)})}
