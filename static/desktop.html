@@ -269,7 +269,7 @@ window.addEventListener('drop',e=>{if(!isExternalFileDrag(e))return;e.preventDef
 window.addEventListener('blur',()=>{globalFileDragDepth=0;setGlobalFileDrag(false)});
 
 $('upload').ondragover=e=>{e.preventDefault();$('upload').style.borderColor='#f35'};$('upload').ondragleave=()=>$('upload').style.borderColor='';$('upload').ondrop=e=>{e.preventDefault();$('upload').style.borderColor='';if(e.dataTransfer.files[0])load(e.dataTransfer.files[0])};$('upload').onclick=e=>{if(e.target.id!=='choose')$('file').click()};$('choose').onclick=e=>{e.stopPropagation();$('file').click()};$('file').onchange=e=>{if(e.target.files[0])load(e.target.files[0])};
-async function load(f){if(!restoringProject)persistProjectFile(f);if(!/\.(mp4|mov)$/i.test(f.name)){alert('Gebruik MP4 of MOV');return}undoStack.length=0;redoStack.length=0;updateHistoryButtons();file=f;id='';variantThumb='';variantThumbRequest++;buildAudioWaveform();duration=0;start=0;end=0;drop=0;clipOffset=0;dropLocked=false;videoPlaced=true;audioPlaced=true;if(url)URL.revokeObjectURL(url);url=URL.createObjectURL(f);$('video').src=url;$('video').load();$('fileInfo').textContent=f.name+' · '+(f.size/1048576).toFixed(1)+' MB';$('uploadStatus').textContent='Uploaden…';$('status').textContent='Video geladen';thumbnails(url);let form=new FormData();form.append('file',f);try{let r=await fetch('/api/upload',{method:'POST',body:form});if(!r.ok)throw Error(await r.text());let j=await r.json();id=j.id;duration=j.duration||$('video').duration;end=duration;drop=duration/2;$('uploadStatus').textContent='✓ Upload gereed · Plaats de DROP-marker handmatig';$('mediaInfo').textContent='Video en audio staan op de tijdlijn. Versleep clips of hun randen om te bewerken.';refresh();panel()}catch(e){$('uploadStatus').textContent='Upload mislukt: '+e.message;duration=$('video').duration||0;end=duration;refresh()}}
+async function load(f){if(!restoringProject)persistProjectFile(f);if(!/\.(mp4|mov)$/i.test(f.name)){alert('Gebruik MP4 of MOV');return}undoStack.length=0;redoStack.length=0;updateHistoryButtons();file=f;id='';variantThumb='';variantThumbRequest++;variantThumbPending=false;buildAudioWaveform();duration=0;start=0;end=0;drop=0;clipOffset=0;dropLocked=false;videoPlaced=true;audioPlaced=true;if(url)URL.revokeObjectURL(url);url=URL.createObjectURL(f);$('video').src=url;$('video').load();$('fileInfo').textContent=f.name+' · '+(f.size/1048576).toFixed(1)+' MB';$('uploadStatus').textContent='Uploaden…';$('status').textContent='Video geladen';thumbnails(url);let form=new FormData();form.append('file',f);try{let r=await fetch('/api/upload',{method:'POST',body:form});if(!r.ok)throw Error(await r.text());let j=await r.json();id=j.id;duration=j.duration||$('video').duration;end=duration;drop=duration/2;$('uploadStatus').textContent='✓ Upload gereed · Plaats de DROP-marker handmatig';$('mediaInfo').textContent='Video en audio staan op de tijdlijn. Versleep clips of hun randen om te bewerken.';refresh();panel()}catch(e){$('uploadStatus').textContent='Upload mislukt: '+e.message;duration=$('video').duration||0;end=duration;refresh()}}
 function buildAudioWaveform(){const box=$('audioWaveform');box.replaceChildren();for(let i=0;i<360;i++){const bar=document.createElement('i');const amp=12+Math.abs(Math.sin(i*.47)*Math.cos(i*.13)*72)+Math.abs(Math.sin(i*1.7)*15);bar.style.height=Math.min(90,amp)+'%';box.append(bar)}}
 let token=0;async function thumbnails(src){const current=++token,v=document.createElement('video'),box=$('thumbs');$('clipFilmstrip').replaceChildren();v.muted=true;v.playsInline=true;v.preload='auto';v.src=src;box.replaceChildren();try{await new Promise((ok,bad)=>{v.onloadedmetadata=ok;v.onerror=bad});let canvas=document.createElement('canvas');canvas.width=70;canvas.height=90;let ctx=canvas.getContext('2d');for(let i=0;i<16;i++){if(current!==token)return;v.currentTime=Math.min(v.duration-.05,(i+.5)*v.duration/16);await new Promise(ok=>{v.onseeked=ok;setTimeout(ok,500)});if(!v.videoWidth)continue;let scale=Math.max(70/v.videoWidth,90/v.videoHeight);ctx.drawImage(v,(70-v.videoWidth*scale)/2,(90-v.videoHeight*scale)/2,v.videoWidth*scale,v.videoHeight*scale);let img=new Image();img.src=canvas.toDataURL('image/jpeg',.6);box.append(img)}}catch(e){console.warn(e)}}
 const group=(title,body)=>'<section class="group"><h4>'+title+'</h4>'+body+'</section>';const number=(label,key,value)=>'<label class="field"><span>'+label+'</span><input type="number" id="'+key+'" step=".01" value="'+value+'"></label>';const slider=(label,key,min,max,step=1)=>'<label class="field"><span>'+label+'</span><input type="range" data-grade="'+key+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+grade[key]+'"><output>'+grade[key]+'</output></label>';
@@ -342,16 +342,18 @@ async function makeVariants(){
 }
 let variantThumb='';let variantSelected=new Set();let alternateMirror=false;
 let variantThumbRequest=0;
+let variantThumbPending=false;
 function captureVariantThumbnail(){
- const request=++variantThumbRequest;
- if(!url)return;
+ if(!url||variantThumb||variantThumbPending)return;
+ variantThumbPending=true;
+ const request=variantThumbRequest,source=url,at=Math.max(0,start);
  const probe=document.createElement('video');
  probe.muted=true;probe.playsInline=true;probe.preload='auto';
- let finished=false;
- const cleanup=()=>{probe.pause();probe.removeAttribute('src');probe.load()};
+ let done=false,timeout;
+ const cleanup=()=>{clearTimeout(timeout);probe.pause();probe.removeAttribute('src');probe.load();variantThumbPending=false};
  const paint=()=>{
-  if(finished||request!==variantThumbRequest||!probe.videoWidth||probe.readyState<2)return;
-  finished=true;
+  if(done||request!==variantThumbRequest||source!==url){cleanup();return}
+  if(probe.readyState<2||!probe.videoWidth)return;
   try{
    const canvas=document.createElement('canvas');canvas.width=144;canvas.height=256;
    const ctx=canvas.getContext('2d');
@@ -364,14 +366,26 @@ function captureVariantThumbnail(){
     const scale=Math.min(canvas.width/vw,canvas.height/vh),w=vw*scale,h=vh*scale;
     ctx.drawImage(probe,(canvas.width-w)/2,(canvas.height-h)/2,w,h);
    }
-   variantThumb=canvas.toDataURL('image/jpeg',.82);drawVariantList();
-  }catch(err){console.warn('Thumbnail unavailable',err)}
-  cleanup();
+   variantThumb=canvas.toDataURL('image/jpeg',.84);
+   done=true;drawVariantList();cleanup();
+  }catch(err){console.warn('Thumbnail unavailable',err);cleanup()}
  };
- probe.addEventListener('loadedmetadata',()=>{probe.currentTime=Math.min(Math.max(0,start),Math.max(0,probe.duration-.05))},{once:true});
- probe.addEventListener('seeked',()=>{if(probe.requestVideoFrameCallback)probe.requestVideoFrameCallback(paint);else paint()},{once:true});
+ const ready=()=>{
+  if(done||request!==variantThumbRequest)return;
+  if(probe.requestVideoFrameCallback)probe.requestVideoFrameCallback(()=>paint());
+  else requestAnimationFrame(paint);
+ };
+ probe.addEventListener('loadedmetadata',()=>{
+  const target=Math.min(at,Math.max(0,(probe.duration||at)-.05));
+  if(Math.abs(probe.currentTime-target)<.02)ready();
+  else probe.currentTime=target;
+ },{once:true});
+ probe.addEventListener('seeked',ready);
+ probe.addEventListener('loadeddata',ready);
+ probe.addEventListener('canplay',ready);
  probe.addEventListener('error',cleanup,{once:true});
- probe.src=url;probe.load();
+ timeout=setTimeout(()=>{if(!done){paint();if(!done)cleanup()}},7000);
+ probe.src=source;probe.load();
 }
 function ensureVariantSlots(count){
  const n=clamp(Math.round(count),1,100);
