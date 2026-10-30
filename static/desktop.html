@@ -719,30 +719,40 @@ async function generateCaptions(selectedOnly=false){
  if(!variantItems.length){$('captionStatus').textContent='Maak eerst on-screen teksten in venster 2.';return}
  const indices=selectedOnly?[...captionSelected].sort((a,b)=>a-b):variantItems.map((_,i)=>i);
  if(!indices.length){$('captionStatus').textContent='Selecteer eerst een of meer varianten.';return}
- const button=selectedOnly?$('regenerateCaptions'):$('generateCaptions');button.disabled=true;
+ const button=selectedOnly?$('regenerateCaptions'):$('generateCaptions');
+ button.disabled=true;
  const focus=[...document.querySelectorAll('.caption-focus input:checked')].map(el=>el.value);
  const minWords=+$('captionMinWords').value,maxWords=+$('captionMaxWords').value;
  const used=new Set(captionItems.filter((_,i)=>!indices.includes(i)).map(captionUniqueKey).filter(Boolean));
- $('captionStatus').textContent='Captions genereren…';
+ // Show usable captions immediately; AI improves them asynchronously when available.
+ const initial=new Map();
+ for(const i of indices){
+  const value=localCaptionFallback(variantItems[i],i,minWords,maxWords,used,$('captionLanguage').value);
+  captionItems[i]=value;initial.set(i,value);
+ }
+ renderCaptionGallery();saveProjectLocally();
+ $('captionStatus').textContent=indices.length+' captions direct klaar · AI-verfijning op de achtergrond…';
+ button.disabled=false;
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),7000);
  try{
-  let generated=[];
-  try{
-   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),18000);
-   try{
-    const response=await fetch('/api/generate-captions-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texts:indices.map(i=>variantItems[i]),language:$('captionLanguage').value,tone:$('captionTone').value,focus,allow_emojis:$('captionAllowEmojis').checked,instructions:$('captionInstructions').value,min_words:minWords,max_words:maxWords,excluded_captions:[...used]}),signal:controller.signal});
-    if(!response.ok)throw Error('AI tijdelijk niet beschikbaar');
-    const data=await response.json();generated=Array.isArray(data.captions)?data.captions:[];
-   }finally{clearTimeout(timer)}
-  }catch(err){console.warn('Batch captions: lokale fallback',err)}
-  let fallback=0;
+  const response=await fetch('/api/generate-captions-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texts:indices.map(i=>variantItems[i]),language:$('captionLanguage').value,tone:$('captionTone').value,focus,allow_emojis:$('captionAllowEmojis').checked,instructions:$('captionInstructions').value,min_words:minWords,max_words:maxWords,excluded_captions:[...used]}),signal:controller.signal});
+  if(!response.ok)throw Error('AI tijdelijk niet beschikbaar');
+  const data=await response.json(),generated=Array.isArray(data.captions)?data.captions:[];
+  let refined=0;
   for(let j=0;j<indices.length;j++){
    const i=indices[j],value=String(generated[j]||'').trim(),key=captionUniqueKey(value);
-   if(value&&!used.has(key)&&captionWordCount(value)>=minWords&&captionWordCount(value)<=maxWords){captionItems[i]=value;used.add(key)}
-   else{captionItems[i]=localCaptionFallback(variantItems[i],i,minWords,maxWords,used,$('captionLanguage').value);fallback++}
+   // Never overwrite a caption edited by the user while AI was running.
+   if(captionItems[i]!==initial.get(i))continue;
+   if(value&&!used.has(key)&&captionWordCount(value)>=minWords&&captionWordCount(value)<=maxWords){
+    used.delete(captionUniqueKey(initial.get(i)));captionItems[i]=value;used.add(key);refined++;
+   }
   }
-  renderCaptionGallery();saveProjectLocally();
-  $('captionStatus').textContent=indices.length+' unieke captions klaar'+(fallback?' · '+fallback+' lokaal aangevuld':'')+'.';
- }finally{button.disabled=false}
+  if(refined){renderCaptionGallery();saveProjectLocally()}
+  $('captionStatus').textContent=indices.length+' captions klaar'+(refined?' · '+refined+' met AI verfijnd':'')+'.';
+ }catch(err){
+  console.warn('AI caption refinement unavailable; instant captions preserved',err);
+  $('captionStatus').textContent=indices.length+' captions klaar · snelle modus gebruikt.';
+ }finally{clearTimeout(timer)}
 }
 
 function switchWorkspace(which){
