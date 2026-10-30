@@ -41,6 +41,11 @@ def detect_drop(path):
   return round(best[1],2) if best[1] is not None and best[0]>.09 else None
  except (subprocess.SubprocessError,ValueError,OSError):return None
 
+def approved_caption_references():
+ path=ROOT/'caption_library.txt'
+ if not path.exists():return []
+ return [line.strip() for line in path.read_text(encoding='utf-8').splitlines() if line.strip()]
+
 class TextVariantsRequest(BaseModel):
  examples:list[str]
  count:int=5
@@ -68,7 +73,7 @@ def generate_texts(data:TextVariantsRequest):
  'GET READY, EXPERIENCE THE, and similar phrases unless explicitly present in user examples. '
  'Do not automatically mention crowds, drops, bass or energy unless the examples actually focus on those things. '
  'Prefer natural short sentences, specific observations, relatable POVs and unexpected but plausible hooks. '
- 'Vary sentence patterns and angles; do not create a list of interchangeable slogans. '
+ 'Use the approved style references as guidance for tone and structure, not as text to copy. Avoid last kick and final kick phrasing. Vary sentence patterns and angles; do not create a list of interchangeable slogans. '
  'Use the same language as the examples. Do not invent facts about a clip you have not seen. '
  'Usually 3-12 words; longer only if the examples demand it. '
  'When a music genre is provided by the user, treat it as an important creative keyword and naturally weave the exact genre phrase into a meaningful share of the captions (roughly half to three quarters), but not every caption. ' 
@@ -79,7 +84,7 @@ def generate_texts(data:TextVariantsRequest):
  payload={'model':os.getenv('OPENAI_TEXT_MODEL','gpt-4o-mini'),'temperature':0.85,
   'response_format':{'type':'json_object'},
   'messages':[{'role':'system','content':instruction},
-   {'role':'user','content':json.dumps({'examples':examples[:30],'count':data.count,'music_genre':data.genre.strip()[:80],'instructions':'Return exactly count distinct captions. Do not copy examples.'})}]}
+   {'role':'user','content':json.dumps({'examples':examples[:30],'approved_style_references':approved_caption_references(),'count':data.count,'music_genre':data.genre.strip()[:80],'instructions':'Return exactly count distinct captions. Do not copy examples.'})}]}
  req=urllib.request.Request('https://api.openai.com/v1/chat/completions',
   data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
  try:
