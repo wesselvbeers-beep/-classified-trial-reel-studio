@@ -75,7 +75,7 @@ def generate_texts(data:TextVariantsRequest):
  'Do not automatically mention crowds, drops, bass or energy unless the examples actually focus on those things. '
  'Prefer natural short sentences, specific observations, relatable POVs and unexpected but plausible hooks. '
  'Use the approved style references as guidance for tone and structure, not as text to copy. Avoid last kick and final kick phrasing. Vary sentence patterns and angles; do not create a list of interchangeable slogans. '
- 'Use the same language as the examples. Do not invent facts about a clip you have not seen. '
+ 'Use the same language as the examples. Write generated captions in normal sentence case: capitalize only the first letter of the sentence and proper nouns, never use ALL CAPS for emphasis. The user can separately enable full caps in text settings. Do not invent facts about a clip you have not seen. '
  'Usually 3-12 words; longer only if the examples demand it. '
  'When a music genre is provided by the user, treat it as an important creative keyword and naturally weave the exact genre phrase into a meaningful share of the captions (roughly half to three quarters), but not every caption. ' 
  'Keep genre mentions grammatically natural and avoid forcing the same phrase structure repeatedly. ' 
