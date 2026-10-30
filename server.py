@@ -123,6 +123,10 @@ class CaptionRequest(BaseModel):
  focus:list[str]=[]
  allow_emojis:bool=True
  instructions:str=''
+ min_words:int=2
+ max_words:int=6
+ excluded_captions:list[str]=[]
+ previous_caption:str=''
 
 @app.post('/api/generate-caption')
 def generate_caption(data:CaptionRequest):
@@ -132,7 +136,7 @@ def generate_caption(data:CaptionRequest):
  if not source:raise HTTPException(400,'Deze variant heeft nog geen on-screen tekst.')
  system=('Write exactly ONE very short, basic and natural social media caption for a raw hardstyle or uptempo trial reel. '
   'Write like a real person casually posting a clip, NOT a brand copywriter. Keep it low-key, conversational, understated and specific to the on-screen text. '
-  'Prefer 2 to 6 words. Fragments and simple questions are welcome; a full sentence is not required. '
+  'Respect the requested minimum and maximum word counts exactly (1 to 20 words). Fragments and simple questions are welcome; a full sentence is not required. '
   'Examples of the desired simplicity: "That drop though.", "Did you hear that?", "Those kicks.", "Wait for it.", "This one.", "Okay, that was hard." '
   'Do NOT copy the on-screen text verbatim. Do NOT write dramatic declarations, forced hype, inspirational slogans, grand claims, or corny statements. '
   'Avoid phrases such as "unmatched energy", "pure madness", "next level", "unreal vibes", "the crowd went wild", "a moment to remember", "no words needed", "this hits different", or "what a night". '
@@ -140,9 +144,10 @@ def generate_caption(data:CaptionRequest):
   'Never use beat or beats; use drop, kick or track only if relevant, not by default. '
   'Honor the requested language and tone, but even the underground tone must remain simple and casual. '
   'Use at most one emoji when allow_emojis is true, and no emojis when false; emojis are optional, never forced. '
+  'Every caption must be original, distinct from the excluded normalized captions and previous caption. Vary sentence structure and vocabulary significantly; do not just change one word. '
   'Return JSON only: {"caption":"..."}')
  payload={'model':os.getenv('OPENAI_TEXT_MODEL','gpt-4o-mini'),'temperature':0.55,'response_format':{'type':'json_object'},
-  'messages':[{'role':'system','content':system},{'role':'user','content':json.dumps({'onscreen_text':source[:350],'language':data.language,'tone':data.tone,'focus':data.focus[:8],'allow_emojis':data.allow_emojis,'instructions':data.instructions[:400]})}]}
+  'messages':[{'role':'system','content':system},{'role':'user','content':json.dumps({'onscreen_text':source[:350],'language':data.language,'tone':data.tone,'focus':data.focus[:8],'allow_emojis':data.allow_emojis,'instructions':data.instructions[:400],'min_words':max(1,min(20,data.min_words)),'max_words':max(1,min(20,data.max_words)),'excluded_normalized_captions':data.excluded_captions[-100:],'previous_caption':data.previous_caption[:180]})}]}
  req=urllib.request.Request('https://api.openai.com/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
  try:
   with urllib.request.urlopen(req,timeout=75) as response:result=json.load(response)
