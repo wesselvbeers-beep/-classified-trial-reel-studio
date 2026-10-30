@@ -50,6 +50,7 @@ class TextVariantsRequest(BaseModel):
  examples:list[str]
  count:int=5
  genre:str=''
+ allow_emojis:bool=False
 
 @app.get('/api/generate-texts/status')
 def text_generation_status():
@@ -78,13 +79,14 @@ def generate_texts(data:TextVariantsRequest):
  'Usually 3-12 words; longer only if the examples demand it. '
  'When a music genre is provided by the user, treat it as an important creative keyword and naturally weave the exact genre phrase into a meaningful share of the captions (roughly half to three quarters), but not every caption. ' 
  'Keep genre mentions grammatically natural and avoid forcing the same phrase structure repeatedly. ' 
+ 'If allow_emojis is true, emojis are permitted sparingly when natural and relevant; do not force emojis into every caption. If allow_emojis is false, never use emojis. ' 
  'Return exactly the requested number of distinct, original captions. '
- 'No numbering, emojis, hashtags, marketing buzzwords or explanations. '
+ 'No numbering, hashtags, marketing buzzwords or explanations. '
  'Return valid JSON only: {"texts":["..."]}.')
  payload={'model':os.getenv('OPENAI_TEXT_MODEL','gpt-4o-mini'),'temperature':0.85,
   'response_format':{'type':'json_object'},
   'messages':[{'role':'system','content':instruction},
-   {'role':'user','content':json.dumps({'examples':examples[:30],'approved_style_references':approved_caption_references(),'count':data.count,'music_genre':data.genre.strip()[:80],'instructions':'Return exactly count distinct captions. Do not copy examples.'})}]}
+   {'role':'user','content':json.dumps({'examples':examples[:30],'approved_style_references':approved_caption_references(),'count':data.count,'music_genre':data.genre.strip()[:80],'allow_emojis':data.allow_emojis,'instructions':'Return exactly count distinct captions. Do not copy examples.'})}]}
  req=urllib.request.Request('https://api.openai.com/v1/chat/completions',
   data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
  try:
