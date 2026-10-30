@@ -326,11 +326,11 @@ async function makeVariants(){
   if(!(await configResponse.json()).configured)throw Error('AI is nog niet ingesteld. Controleer OPENAI_API_KEY in Render.');
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),90000);
   let response;
-  try{response=await fetch('/api/generate-texts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({examples,count:remaining,genre:$('variantGenre').value.trim(),allow_emojis:$('variantAllowEmojis').checked,voice:$('variantVoice').value}),signal:controller.signal})}finally{clearTimeout(timer)}
+  try{response=await fetch('/api/generate-texts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({examples,count:remaining,genre:$('variantGenre').value.trim(),allow_emojis:$('variantAllowEmojis').checked,voice:$('variantVoice').value,...aiFeedback()}),signal:controller.signal})}finally{clearTimeout(timer)}
   const data=await response.json();
   if(!response.ok)throw Error(typeof data.detail==='string'?data.detail:'Genereren mislukt.');
   const used=new Set(seedTexts.map(s=>s.trim().toLocaleUpperCase()));
-  const generated=(Array.isArray(data.texts)?data.texts:[]).map(s=>String(s).trim()).filter(s=>{const key=s.toLocaleUpperCase();if(!s||used.has(key))return false;used.add(key);return true}).slice(0,remaining);
+  const generated=(Array.isArray(data.texts)?data.texts:[]).map(s=>String(s).trim()).filter(s=>{const key=s.toLocaleUpperCase();if(!s||used.has(key)||textFeedback.rejected.some(r=>feedbackKey(r)===feedbackKey(s)))return false;used.add(key);return true}).slice(0,remaining);
   variantItems=[...seedTexts,...generated,...Array(Math.max(0,remaining-generated.length)).fill('')];
   variantSelected.clear();activeVariant=0;drawVariantList();updateVariantPreview();saveProjectLocally();
   info.textContent=seedTexts.length+' voorbeeldzinnen + '+generated.length+' nieuwe AI-teksten toegevoegd'+(generated.length<remaining?' ('+(remaining-generated.length)+' nog leeg)':'')+'.';
@@ -388,6 +388,20 @@ function applyVariantOutline(el,s,scale=1){
  el.style.setProperty('--outline-blur','0px');
  el.style.textShadow=s.shadow!==false?variantTextShadow(s.outlineFade??2,scale,s.shadowDistance??0,s.shadowAngle??135,s.shadowOpacity??95):'none';
 }
+const feedbackStorageKey='trial-reel-text-feedback-v1';
+let textFeedback={rejected:[],preferred:[]};
+try{const f=JSON.parse(localStorage.getItem(feedbackStorageKey)||'{}');textFeedback={rejected:Array.isArray(f.rejected)?f.rejected:[],preferred:Array.isArray(f.preferred)?f.preferred:[]}}catch{}
+function feedbackKey(s){return String(s||'').toLocaleLowerCase().replace(/[^\\p{L}\\p{N}]/gu,'')}
+function rememberFeedback(kind,text){
+ const value=String(text||'').trim(),key=feedbackKey(value);if(!key)return;
+ const opposite=kind==='rejected'?'preferred':'rejected';
+ textFeedback[opposite]=textFeedback[opposite].filter(s=>feedbackKey(s)!==key);
+ if(!textFeedback[kind].some(s=>feedbackKey(s)===key))textFeedback[kind].push(value);
+ textFeedback[kind]=textFeedback[kind].slice(-250);
+ try{localStorage.setItem(feedbackStorageKey,JSON.stringify(textFeedback))}catch{}
+}
+function learnReplacements(before,after){for(const t of before)if(t&&!after.some(s=>feedbackKey(s)===feedbackKey(t)))rememberFeedback('rejected',t)}
+function aiFeedback(){return {rejected:textFeedback.rejected,preferred:textFeedback.preferred}}
 function drawVariantList(){
  const box=$('variantList');box.replaceChildren();
  $('variantGalleryCount').textContent=variantItems.length?variantItems.length+' varianten · klik om te bewerken':'Kies eerst het aantal varianten links.';
@@ -434,6 +448,7 @@ if(typeof ResizeObserver!=='undefined'){
 $('selectAllVariants').onchange=e=>{variantSelected=e.target.checked?new Set(variantItems.map((_,i)=>i)):new Set();drawVariantList()};
 $('bulkDelete').onclick=()=>{
  if(!variantSelected.size)return;
+ for(const i of variantSelected)rememberFeedback('rejected',variantItems[i]);
  variantItems=variantItems.filter((_,i)=>!variantSelected.has(i));
  variantSelected.clear();activeVariant=Math.min(activeVariant,Math.max(0,variantItems.length-1));
  $('variantCount').value=variantItems.length||'';
@@ -443,7 +458,8 @@ $('bulkText').onclick=()=>{
  if(!variantSelected.size)return;
  const replacement=window.prompt('Nieuwe on-screen tekst voor '+variantSelected.size+' geselecteerde varianten:');
  if(replacement===null)return;
- for(const i of variantSelected)variantItems[i]=replacement;
+ for(const i of variantSelected){if(variantItems[i]!==replacement)rememberFeedback('rejected',variantItems[i]);variantItems[i]=replacement}
+ rememberFeedback('preferred',replacement);
  drawVariantList();updateVariantPreview();
 };
 $('bulkRegenerate').onclick=async()=>{
@@ -455,9 +471,9 @@ $('bulkRegenerate').onclick=async()=>{
  try{
   const status=await fetch('/api/generate-texts/status');if(!status.ok||(await status.json()).configured!==true)throw Error('De AI-koppeling is niet beschikbaar.');
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),90000);
-  let response;try{response=await fetch('/api/generate-texts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({examples,count:indices.length,genre:$('variantGenre').value.trim(),allow_emojis:$('variantAllowEmojis').checked}),signal:controller.signal})}finally{clearTimeout(timer)}
+  let response;try{response=await fetch('/api/generate-texts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({examples,count:indices.length,genre:$('variantGenre').value.trim(),allow_emojis:$('variantAllowEmojis').checked,voice:$('variantVoice').value,...aiFeedback()}),signal:controller.signal})}finally{clearTimeout(timer)}
   const data=await response.json();if(!response.ok)throw Error(data.detail||'Genereren mislukt.');
-  indices.forEach((index,j)=>{if(typeof data.texts?.[j]==='string')variantItems[index]=data.texts[j]});
+  indices.forEach((index,j)=>{if(typeof data.texts?.[j]==='string'&&!textFeedback.rejected.some(r=>feedbackKey(r)===feedbackKey(data.texts[j]))){rememberFeedback('rejected',variantItems[index]);variantItems[index]=data.texts[j]}});
   drawVariantList();updateVariantPreview();info.textContent=(data.texts?.length||0)+' geselecteerde varianten bijgewerkt. Andere teksten zijn behouden.';
  }catch(err){info.textContent=err.name==='AbortError'?'AI reageert niet op tijd.':err.message}
  finally{button.textContent='Nieuwe AI-teksten';updateBulkControls()}
@@ -522,6 +538,7 @@ $('backToMaster').onclick=()=>switchWorkspace('master');
 $('switchMaster').onclick=()=>switchWorkspace('master');
 $('switchVariants').onclick=()=>switchWorkspace('variants');
 $('generateVariants').onclick=makeVariants;
+let originalEditedText='';$('variantText').onfocus=()=>{originalEditedText=variantItems[activeVariant]||''};$('variantText').onblur=()=>{const current=variantItems[activeVariant]||'';if(current!==originalEditedText){rememberFeedback('rejected',originalEditedText);rememberFeedback('preferred',current)}};
 $('variantText').oninput=e=>{variantItems[activeVariant]=e.target.value;$('variantOverlay').textContent=variantSettings.fullCaps?e.target.value.toUpperCase():e.target.value;applyVariantOutline($('variantOverlay'),variantSettings);drawVariantList()};
 for(const [id,key] of [['variantFontSize','size'],['variantWeight','weight'],['variantColor','color'],['variantOutlineWidth','outlineWidth'],['variantOutlineFade','outlineFade'],['variantShadowDistance','shadowDistance'],['variantShadowOpacity','shadowOpacity']])$(id).oninput=e=>{variantSettings[key]=['size','x','y','outlineWidth','outlineFade','shadowDistance','shadowOpacity'].includes(key)?+e.target.value:e.target.value;updateVariantPreview()};
 for(const [id,key] of [['variantFullCaps','fullCaps'],['variantItalic','italic']])$(id).onchange=e=>{variantSettings[key]=e.target.checked;updateVariantPreview()};
