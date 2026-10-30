@@ -98,13 +98,28 @@ function restoreSnapshot(value){historyApplying=true;try{const s=JSON.parse(valu
 function undo(){if(!undoStack.length)return;redoStack.push(snapshot());restoreSnapshot(undoStack.pop())}
 function redo(){if(!redoStack.length)return;undoStack.push(snapshot());restoreSnapshot(redoStack.pop())}
 $('undoBtn').onclick=undo;$('redoBtn').onclick=redo;
-document.addEventListener('keydown',e=>{if(e.code==='Space'&&!e.repeat&&!e.metaKey&&!e.ctrlKey&&!e.altKey){const target=e.target;const typing=target?.isContentEditable||['TEXTAREA'].includes(target?.tagName)||(target?.tagName==='INPUT'&&!['range','checkbox','radio','number','color','file'].includes(target.type));if(!typing){e.preventDefault();play();return}}if(!(e.metaKey||e.ctrlKey)||e.key.toLowerCase()!=='z'||e.altKey)return;const el=e.target;if(el&&(['INPUT','TEXTAREA'].includes(el.tagName)||el.isContentEditable)&&!el.matches('input[type=range],input[type=checkbox],input[type=number]'))return;e.preventDefault();if(e.shiftKey)redo();else undo()});
+document.addEventListener('keydown',e=>{
+ if(e.code==='Space'&&!e.repeat&&!e.metaKey&&!e.ctrlKey&&!e.altKey){
+  const target=e.target;
+  const typing=target?.isContentEditable||target?.tagName==='TEXTAREA'||(target?.tagName==='INPUT'&&!['range','checkbox','radio','number','color','file'].includes(target.type));
+  if(!typing){e.preventDefault();play();return}
+ }
+ if(!(e.metaKey||e.ctrlKey)||e.key.toLowerCase()!=='z'||e.altKey)return;
+ const el=e.target;
+ // Preserve native text editing undo, but use project history for sliders, numbers, selects and canvas.
+ if(el&&(el.isContentEditable||el.tagName==='TEXTAREA'||(el.tagName==='INPUT'&&!['range','checkbox','number','radio','color','file'].includes(el.type))))return;
+ e.preventDefault();
+ if(e.shiftKey)redo();else undo();
+},true);
 const editTarget=e=>{const el=e.target;if(!el||!el.closest)return false;if(el.closest('#strip')&&el.closest('.handle,.drop'))return true;if(el.closest('#videoClip,#audioClip,#videoTrack,#audioTrack,#fileInfo'))return true;if(el.id==='lockDrop'||el.id==='reset'||el.id==='addText')return true;if(el.closest('#panel')&&el.matches('input,select,textarea'))return true;return false};
-document.addEventListener('pointerdown',e=>{if(editTarget(e))historyStart=snapshot()},true);
-document.addEventListener('pointerup',()=>{if(historyStart){const before=historyStart;historyStart=null;requestAnimationFrame(()=>recordPrevious(before))}},true);
-document.addEventListener('change',e=>{if(editTarget(e)){const before=historyStart;historyStart=null;requestAnimationFrame(()=>recordPrevious(before))}},true);
-document.addEventListener('click',e=>{if(['lockDrop','reset','addText'].includes(e.target.id)){const before=historyStart;historyStart=null;requestAnimationFrame(()=>recordPrevious(before))}},true);
-
+let pendingHistory=null;
+function commitPendingHistory(){if(pendingHistory===null)return;const before=pendingHistory;pendingHistory=null;recordPrevious(before)}
+document.addEventListener('pointerdown',e=>{if(editTarget(e)){commitPendingHistory();historyStart=snapshot()}},true);
+document.addEventListener('focusin',e=>{if(editTarget(e)&&historyStart===null){commitPendingHistory();historyStart=snapshot()}},true);
+document.addEventListener('input',e=>{if(!editTarget(e))return;if(historyStart===null)historyStart=snapshot();},true);
+document.addEventListener('change',e=>{if(!editTarget(e))return;const before=historyStart;historyStart=null;if(before!==null){pendingHistory=before;requestAnimationFrame(commitPendingHistory)}},true);
+document.addEventListener('pointerup',()=>{if(historyStart!==null){const before=historyStart;historyStart=null;pendingHistory=before;requestAnimationFrame(commitPendingHistory)}},true);
+document.addEventListener('focusout',()=>{if(historyStart!==null){const before=historyStart;historyStart=null;pendingHistory=before;requestAnimationFrame(commitPendingHistory)}},true);
 // Timeline: drag media from library, move clips, and trim their left/right edges.
 $('fileInfo').addEventListener('dragstart',e=>{if(!file){e.preventDefault();return}e.dataTransfer.setData('text/plain','trial-media');e.dataTransfer.effectAllowed='copy'});
 for(const [trackId,kind] of [['videoTrack','video'],['audioTrack','audio']]){const track=$(trackId);track.addEventListener('dragover',e=>{if(!file)return;e.preventDefault();track.classList.add('drag-target')});track.addEventListener('dragleave',()=>track.classList.remove('drag-target'));track.addEventListener('drop',e=>{const before=snapshot();e.preventDefault();track.classList.remove('drag-target');if(!file)return;if(kind==='video')videoPlaced=true;else audioPlaced=true;const r=track.getBoundingClientRect();clipOffset=clamp((e.clientX-r.left)/r.width*duration,0,Math.max(0,duration-(end-start)));refresh();recordPrevious(before)})}
