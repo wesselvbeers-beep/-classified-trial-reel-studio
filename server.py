@@ -130,13 +130,18 @@ def generate_caption(data:CaptionRequest):
  if not key:raise HTTPException(503,'AI is niet ingesteld. Controleer OPENAI_API_KEY.')
  source=data.onscreen_text.strip()
  if not source:raise HTTPException(400,'Deze variant heeft nog geen on-screen tekst.')
- system=('Write exactly ONE very short social media caption based on the supplied on-screen text for a raw hardstyle or uptempo trial reel. '
-  'The caption must complement the on-screen text rather than copy it. Natural underground scene language, not generic marketing hype. '
-  'Prefer 2 to 9 words, one sentence only, no hashtags, no invented facts, no quotation marks. '
-  'Never use beat or beats. When relevant use drop, kick or track instead. '
-  'Use the requested language and tone. Emoji use must strictly follow allow_emojis. '
+ system=('Write exactly ONE very short, basic and natural social media caption for a raw hardstyle or uptempo trial reel. '
+  'Write like a real person casually posting a clip, NOT a brand copywriter. Keep it low-key, conversational, understated and specific to the on-screen text. '
+  'Prefer 2 to 6 words. Fragments and simple questions are welcome; a full sentence is not required. '
+  'Examples of the desired simplicity: "That drop though.", "Did you hear that?", "Those kicks.", "Wait for it.", "This one.", "Okay, that was hard." '
+  'Do NOT copy the on-screen text verbatim. Do NOT write dramatic declarations, forced hype, inspirational slogans, grand claims, or corny statements. '
+  'Avoid phrases such as "unmatched energy", "pure madness", "next level", "unreal vibes", "the crowd went wild", "a moment to remember", "no words needed", "this hits different", or "what a night". '
+  'Do not invent facts or mention an artist, location or event unless provided. No hashtags or quotation marks. '
+  'Never use beat or beats; use drop, kick or track only if relevant, not by default. '
+  'Honor the requested language and tone, but even the underground tone must remain simple and casual. '
+  'Use at most one emoji when allow_emojis is true, and no emojis when false; emojis are optional, never forced. '
   'Return JSON only: {"caption":"..."}')
- payload={'model':os.getenv('OPENAI_TEXT_MODEL','gpt-4o-mini'),'temperature':0.8,'response_format':{'type':'json_object'},
+ payload={'model':os.getenv('OPENAI_TEXT_MODEL','gpt-4o-mini'),'temperature':0.55,'response_format':{'type':'json_object'},
   'messages':[{'role':'system','content':system},{'role':'user','content':json.dumps({'onscreen_text':source[:350],'language':data.language,'tone':data.tone,'focus':data.focus[:8],'allow_emojis':data.allow_emojis,'instructions':data.instructions[:400]})}]}
  req=urllib.request.Request('https://api.openai.com/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
  try:
