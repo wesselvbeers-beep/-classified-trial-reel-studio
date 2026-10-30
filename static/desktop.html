@@ -195,7 +195,7 @@ document.addEventListener('keydown',e=>{
  if(e.code==='Space'&&!e.repeat&&!e.metaKey&&!e.ctrlKey&&!e.altKey){
   const target=e.target;
   const typing=target?.isContentEditable||target?.tagName==='TEXTAREA'||(target?.tagName==='INPUT'&&!['range','checkbox','radio','number','color','file'].includes(target.type));
-  if(!typing){e.preventDefault();if(!$('variantWorkspace').classList.contains('hidden')){$('variantPlay').click()}else{$('play').click()}return}
+  if(!typing){e.preventDefault();if(!$('variantWorkspace').classList.contains('hidden')){$('variantPlay').click()}else{play()}return}
  }
  if(!(e.metaKey||e.ctrlKey)||e.key.toLowerCase()!=='z'||e.altKey)return;
  const el=e.target;
