@@ -610,6 +610,13 @@ function setEmojiButtons(prefix,enabled){
 function captionCurrentText(i){return String(captionItems[i]||'')}
 function styleCaptionOverlay(el,scale){
  const s=variantSettings;
+ const master=$('variantOverlay');
+ const masterStyle=window.getComputedStyle(master);
+ // Reuse the exact master text metrics instead of browser defaults in step 3.
+ el.style.fontFamily=masterStyle.fontFamily;
+ el.style.letterSpacing=masterStyle.letterSpacing;
+ el.style.wordSpacing=masterStyle.wordSpacing;
+ el.style.textTransform=masterStyle.textTransform;
  el.style.left=s.x+'%';el.style.top=s.y+'%';
  el.style.width='70%';el.style.maxWidth='70%';
  el.style.transform='translate(-50%,-50%)';
@@ -622,7 +629,7 @@ function styleCaptionOverlay(el,scale){
  el.style.lineHeight='1.15';
  el.style.whiteSpace='pre-wrap';
  el.style.overflowWrap='anywhere';
- el.style.textWrap='balance';
+ el.style.textWrap=masterStyle.textWrap||'balance';
  el.style.padding='0';
  el.style.webkitTextStroke='0px';
  applyVariantOutline(el,s,scale);
