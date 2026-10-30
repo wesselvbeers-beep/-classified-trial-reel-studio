@@ -44,6 +44,7 @@ def detect_drop(path):
 class TextVariantsRequest(BaseModel):
  examples:list[str]
  count:int=5
+ genre:str=''
 
 @app.get('/api/generate-texts/status')
 def text_generation_status():
@@ -70,13 +71,15 @@ def generate_texts(data:TextVariantsRequest):
  'Vary sentence patterns and angles; do not create a list of interchangeable slogans. '
  'Use the same language as the examples. Do not invent facts about a clip you have not seen. '
  'Usually 3-12 words; longer only if the examples demand it. '
+ 'When a music genre is provided by the user, treat it as an important creative keyword and naturally weave the exact genre phrase into a meaningful share of the captions (roughly half to three quarters), but not every caption. ' 
+ 'Keep genre mentions grammatically natural and avoid forcing the same phrase structure repeatedly. ' 
  'Return exactly the requested number of distinct, original captions. '
  'No numbering, emojis, hashtags, marketing buzzwords or explanations. '
  'Return valid JSON only: {"texts":["..."]}.')
  payload={'model':os.getenv('OPENAI_TEXT_MODEL','gpt-4o-mini'),'temperature':0.85,
   'response_format':{'type':'json_object'},
   'messages':[{'role':'system','content':instruction},
-   {'role':'user','content':json.dumps({'examples':examples[:30],'count':data.count,'instructions':'Return exactly count distinct captions. Do not copy examples.'})}]}
+   {'role':'user','content':json.dumps({'examples':examples[:30],'count':data.count,'music_genre':data.genre.strip()[:80],'instructions':'Return exactly count distinct captions. Do not copy examples.'})}]}
  req=urllib.request.Request('https://api.openai.com/v1/chat/completions',
   data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
  try:
