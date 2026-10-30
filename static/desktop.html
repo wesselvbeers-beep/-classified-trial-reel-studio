@@ -717,44 +717,43 @@ function localCaptionFallback(onscreen,i,minWords,maxWords,used,language){
  for(let k=0;k<300;k++){let candidate=seeds[(i+k)%seeds.length]+' '+(language==='nl'?'blijft lekker hangen':'is worth replaying')+(k?' '+(k+1):'')+'.';let tokens=candidate.split(/\s+/);candidate=tokens.slice(0,maxWords).join(' ');while(captionWordCount(candidate)<minWords)candidate+=' '+(language==='nl'?'echt':'again');const key=captionUniqueKey(candidate);if(!used.has(key)){used.add(key);return candidate}}
  return '';
 }
+let captionGenerationBusy=false;
 async function generateCaptions(selectedOnly=false){
+ if(captionGenerationBusy){$('captionStatus').textContent='Wacht tot de huidige AI-aanvraag is afgerond.';return}
  if(!variantItems.length){$('captionStatus').textContent='Maak eerst on-screen teksten in venster 2.';return}
  const indices=selectedOnly?[...captionSelected].sort((a,b)=>a-b):variantItems.map((_,i)=>i);
  if(!indices.length){$('captionStatus').textContent='Selecteer eerst een of meer varianten.';return}
- const button=selectedOnly?$('regenerateCaptions'):$('generateCaptions');
- button.disabled=true;
- const focus=[...document.querySelectorAll('.caption-focus input:checked')].map(el=>el.value);
  const minWords=+$('captionMinWords').value,maxWords=+$('captionMaxWords').value;
  const used=new Set(captionItems.filter((_,i)=>!indices.includes(i)).map(captionUniqueKey).filter(Boolean));
- // Show usable captions immediately; AI improves them asynchronously when available.
- const initial=new Map();
- for(const i of indices){
-  const value=localCaptionFallback(variantItems[i],i,minWords,maxWords,used,$('captionLanguage').value);
-  captionItems[i]=value;initial.set(i,value);
+ if(!selectedOnly){
+  // Fast default: no video processing, no network and no AI request.
+  for(const i of indices)captionItems[i]=localCaptionFallback(variantItems[i],i,minWords,maxWords,used,$('captionLanguage').value);
+  renderCaptionGallery();saveProjectLocally();
+  $('captionStatus').textContent=indices.length+' captions klaar. Selecteer varianten voor optionele AI-verfijning.';
+  return;
  }
- renderCaptionGallery();saveProjectLocally();
- $('captionStatus').textContent=indices.length+' captions direct klaar · AI-verfijning op de achtergrond…';
- button.disabled=false;
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),7000);
+ captionGenerationBusy=true;
+ $('regenerateCaptions').disabled=true;
+ const focus=[...document.querySelectorAll('.caption-focus input:checked')].map(el=>el.value);
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),9000);
+ $('captionStatus').textContent='AI verfijnt '+indices.length+' geselecteerde captions…';
  try{
   const response=await fetch('/api/generate-captions-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texts:indices.map(i=>variantItems[i]),language:$('captionLanguage').value,tone:$('captionTone').value,focus,allow_emojis:$('captionAllowEmojis').checked,instructions:$('captionInstructions').value,min_words:minWords,max_words:maxWords,excluded_captions:[...used]}),signal:controller.signal});
-  if(!response.ok)throw Error('AI tijdelijk niet beschikbaar');
+  if(!response.ok)throw Error('AI niet beschikbaar');
   const data=await response.json(),generated=Array.isArray(data.captions)?data.captions:[];
   let refined=0;
   for(let j=0;j<indices.length;j++){
    const i=indices[j],value=String(generated[j]||'').trim(),key=captionUniqueKey(value);
-   // Never overwrite a caption edited by the user while AI was running.
-   if(captionItems[i]!==initial.get(i))continue;
    if(value&&!used.has(key)&&captionWordCount(value)>=minWords&&captionWordCount(value)<=maxWords){
-    used.delete(captionUniqueKey(initial.get(i)));captionItems[i]=value;used.add(key);refined++;
+    captionItems[i]=value;used.add(key);refined++;
    }
   }
   if(refined){renderCaptionGallery();saveProjectLocally()}
-  $('captionStatus').textContent=indices.length+' captions klaar'+(refined?' · '+refined+' met AI verfijnd':'')+'.';
+  $('captionStatus').textContent=refined+' captions met AI verfijnd.';
  }catch(err){
-  console.warn('AI caption refinement unavailable; instant captions preserved',err);
-  $('captionStatus').textContent=indices.length+' captions klaar · snelle modus gebruikt.';
- }finally{clearTimeout(timer)}
+  console.warn('Optional AI captions unavailable',err);
+  $('captionStatus').textContent='AI niet beschikbaar. Bestaande captions zijn behouden.';
+ }finally{clearTimeout(timer);captionGenerationBusy=false;$('regenerateCaptions').disabled=false}
 }
 
 function switchWorkspace(which){
@@ -806,6 +805,7 @@ for(const [prefix,checkbox] of [['emoji','variantAllowEmojis'],['captionEmoji','
  $(prefix+'Off').onclick=()=>{$(checkbox).checked=false;setEmojiButtons(prefix,false);saveProjectLocally()};
 }
 $('generateCaptions').onclick=()=>generateCaptions(false);
+$('regenerateCaptions').textContent='AI verfijn geselecteerde';
 $('regenerateCaptions').onclick=()=>generateCaptions(true);
 $('captionSelectAll').onchange=e=>{captionSelected=e.target.checked?new Set(variantItems.map((_,i)=>i)):new Set();renderCaptionGallery()};
 $('captionClearSelection').onclick=()=>{captionSelected.clear();renderCaptionGallery()};
