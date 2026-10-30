@@ -19,27 +19,53 @@ def probe(path):
  try:return float(json.loads(p.stdout)['format']['duration'])
  except:return 0
 def detect_drop(path):
- # Estimate the strongest musical energy transition, not a guaranteed musical drop.
- cmd=['ffmpeg','-v','error','-i',str(path),'-vn','-ac','1','-ar','8000','-f','s16le','-']
- try:
+ # Kick-oriented detection: compare sub/bass transients with full-band crowd noise.
+ # A loud crowd scream alone should not be treated as the first kick.
+ def envelope(filters):
+  cmd=['ffmpeg','-v','error','-i',str(path),'-vn','-af',filters,'-ac','1','-ar','8000','-f','s16le','-']
   raw=subprocess.run(cmd,capture_output=True,timeout=110,check=True).stdout
   pcm=array.array('h');pcm.frombytes(raw)
   if sys.byteorder!='little':pcm.byteswap()
-  frame=800; energy=[]
-  for pos in range(0,len(pcm)-frame+1,frame):
-   chunk=pcm[pos:pos+frame]
-   energy.append(math.sqrt(sum(v*v for v in chunk)/frame)/32768)
-  if len(energy)<35:return None
+  step=320  # 40 ms
+  return [math.sqrt(sum(v*v for v in pcm[p:p+step])/step)/32768 for p in range(0,len(pcm)-step+1,step)]
+ try:
+  bass=envelope('highpass=f=35,lowpass=f=155')
+  full=envelope('anull')
+  n=min(len(bass),len(full))
+  if n<100:return None
+  bass=bass[:n];full=full[:n]
+  # Local transient strength. Vocal screams mostly occupy higher frequencies,
+  # while the attack and body of a kick have substantial low-frequency energy.
+  pulses=[]
+  for i in range(25,n-25):
+   previous=sum(bass[i-12:i-2])/10
+   attack=max(bass[i:i+3])
+   rise=max(0,attack-previous)
+   if attack<.009 or rise<.004:continue
+   if attack<max(bass[i-3:i]):continue
+   low_ratio=attack/(max(full[i:i+3])+.008)
+   pulses.append((i,rise*min(1,low_ratio/.30),attack))
+  if not pulses:return None
+  # A drop usually introduces a sequence of kicks, not one isolated scream.
+  # Score the FIRST attack in a run of bass transients at a plausible beat interval.
   best=(-1,None)
-  for i in range(30,len(energy)-10):
-   before=energy[max(0,i-20):i-2];after=energy[i:i+10]
-   if not before:continue
-   prev=sum(before)/len(before);now=sum(after)/len(after)
-   rise=(now-prev)/(prev+.025)
-   score=rise*min(1,now/.10)+max(0,now-prev)*1.5
-   if score>best[0]:best=(score,i/10)
-  return round(best[1],2) if best[1] is not None and best[0]>.09 else None
- except (subprocess.SubprocessError,ValueError,OSError):return None
+  for i,strength,level in pulses:
+   nearby=[(j,s) for j,s,_ in pulses if i+6<=j<=i+55]
+   repeats=0
+   for j,s in nearby:
+    dt=j-i
+    if any(abs(dt-beat)<=3 for beat in (8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24)):
+     if s>=strength*.22:repeats+=1
+   if repeats<2:continue
+   before=sum(bass[max(0,i-25):max(1,i-5)])/max(1,min(20,i-5))
+   after=sum(bass[i:min(n,i+25)])/max(1,min(25,n-i))
+   sustained=max(0,after-before)
+   score=strength*(1+min(3,repeats)*.32)+sustained*.65
+   # Prefer the onset of the rhythmic section over later kicks in the same drop.
+   score-=max(0,i-25)*.000002
+   if score>best[0]:best=(score,i)
+  return round(best[1]*.04,2) if best[1] is not None else None
+ except (subprocess.SubprocessError,ValueError,OSError,ZeroDivisionError):return None
 
 def approved_caption_references():
  path=ROOT/'caption_library.txt'
