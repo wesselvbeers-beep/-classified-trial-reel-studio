@@ -149,7 +149,7 @@ function drawVariantList(){
   const caption=document.createElement('span');caption.className='variant-thumb-caption';
   const s=variantSettings;caption.textContent=(s.fullCaps?txt.toUpperCase():txt)||'Nog geen tekst';
   caption.style.left=s.x+'%';caption.style.top=s.y+'%';
-  caption.style.fontSize=(s.size/27*11)+'px';caption.style.fontWeight=s.weight;
+  caption.style.fontWeight=s.weight;
   caption.style.color=s.color;caption.style.textAlign=s.align;caption.style.fontStyle=s.italic?'italic':'normal';
   caption.style.textShadow=s.outline?'0 1px 3px #000, 0 0 4px #000':'none';
   const index=document.createElement('span');index.className='variant-thumb-index';index.textContent='VARIANT '+String(i+1).padStart(2,'0');
@@ -158,8 +158,27 @@ function drawVariantList(){
   frame.append(image,caption);frame.onclick=()=>{activeVariant=i;drawVariantList();updateVariantPreview()};
   card.append(frame,index,check);frag.append(card);
  });
- box.append(frag);updateBulkControls();
+ box.append(frag);syncVariantThumbnailTypography();updateBulkControls();
 }
+function syncVariantThumbnailTypography(){
+ const stage=$('variantStage');const stageWidth=stage.getBoundingClientRect().width;
+ if(!stageWidth)return;
+ const s=variantSettings;
+ for(const frame of $('variantList').querySelectorAll('.variant-thumb-frame')){
+  const caption=frame.querySelector('.variant-thumb-caption');if(!caption)continue;
+  const ratio=frame.getBoundingClientRect().width/stageWidth;
+  caption.style.fontSize=(s.size*ratio)+'px';
+  caption.style.lineHeight='1.15';
+  caption.style.padding='0';
+  caption.style.width='90%';caption.style.maxWidth='90%';
+ }
+}
+if(typeof ResizeObserver!=='undefined'){
+ const variantTypographyObserver=new ResizeObserver(()=>syncVariantThumbnailTypography());
+ variantTypographyObserver.observe($('variantStage'));
+ variantTypographyObserver.observe($('variantList'));
+}
+
 $('selectAllVariants').onchange=e=>{variantSelected=e.target.checked?new Set(variantItems.map((_,i)=>i)):new Set();drawVariantList()};
 $('bulkDelete').onclick=()=>{
  if(!variantSelected.size)return;
