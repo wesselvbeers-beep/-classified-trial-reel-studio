@@ -760,41 +760,49 @@ function localCaptionFallback(onscreen,i,minWords,maxWords,used,language){
 
 let captionGenerationBusy=false;
 async function generateCaptions(selectedOnly=false){
- if(captionGenerationBusy){$('captionStatus').textContent='Wacht tot de huidige AI-aanvraag is afgerond.';return}
- if(!variantItems.length){$('captionStatus').textContent='Maak eerst on-screen teksten in venster 2.';return}
+ if(captionGenerationBusy){$('captionStatus').textContent='Captiongeneratie loopt al.';return}
+ if(!variantItems.length){$('captionStatus').textContent='Genereer eerst on-screen teksten in venster 2.';return}
  const indices=selectedOnly?[...captionSelected].sort((a,b)=>a-b):variantItems.map((_,i)=>i);
- if(!indices.length){$('captionStatus').textContent='Selecteer eerst een of meer varianten.';return}
- const minWords=Math.max(1,Math.min(20,Number($('captionMinWords').value)||2)),maxWords=Math.max(minWords,Math.min(20,Number($('captionMaxWords').value)||6));
+ if(!indices.length){$('captionStatus').textContent='Selecteer eerst varianten.';return}
+ const minWords=Math.max(1,Math.min(20,Number($('captionMinWords').value)||2));
+ const maxWords=Math.max(minWords,Math.min(20,Number($('captionMaxWords').value)||6));
+ const language=$('captionLanguage').value;
  const used=new Set(captionItems.filter((_,i)=>!indices.includes(i)).map(captionUniqueKey).filter(Boolean));
- if(!selectedOnly){
-  // Fast default: no video processing, no network and no AI request.
-  for(const i of indices)captionItems[i]=localCaptionFallback(variantItems[i],i,minWords,maxWords,used,$('captionLanguage').value);
-  updateCaptionFields(indices);saveProjectLocally();
-  $('captionStatus').textContent=indices.length+' captions klaar. Selecteer varianten voor optionele AI-verfijning.';
-  return;
+ // Always show a relevant first draft for EVERY variant, even when AI is unavailable.
+ for(const i of indices){
+  const fallback=localCaptionFallback(variantItems[i],i,minWords,maxWords,used,language);
+  captionItems[i]=fallback||String(variantItems[i]||'').trim().replace(/[.!?]+$/,'').split(/\\s+/).slice(0,maxWords).join(' ')||'Listen to this one.';
  }
+ updateCaptionFields(indices);saveProjectLocally();
+ $('captionStatus').textContent=indices.length+' eerste captions klaar. AI maakt ze passend bij de on-screen teksten…';
  captionGenerationBusy=true;
- $('regenerateCaptions').disabled=true;
+ $('generateCaptions').disabled=true;$('regenerateCaptions').disabled=true;
  const focus=[...document.querySelectorAll('.caption-focus input:checked')].map(el=>el.value);
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),9000);
- $('captionStatus').textContent='AI verfijnt '+indices.length+' geselecteerde captions…';
+ let refined=0,failed=0;
  try{
-  const response=await fetch('/api/generate-captions-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texts:indices.map(i=>variantItems[i]),language:$('captionLanguage').value,tone:$('captionTone').value,focus,allow_emojis:$('captionAllowEmojis').checked,instructions:$('captionInstructions').value,min_words:minWords,max_words:maxWords,excluded_captions:[...used]}),signal:controller.signal});
-  if(!response.ok)throw Error('AI niet beschikbaar');
-  const data=await response.json(),generated=Array.isArray(data.captions)?data.captions:[];
-  let refined=0;
-  for(let j=0;j<indices.length;j++){
-   const i=indices[j],value=String(generated[j]||'').trim(),key=captionUniqueKey(value);
-   if(value&&!used.has(key)&&captionWordCount(value)>=minWords&&captionWordCount(value)<=maxWords){
-    captionItems[i]=value;used.add(key);refined++;
-   }
+  // Small sequential batches avoid huge responses and keep the browser responsive.
+  for(let offset=0;offset<indices.length;offset+=3){
+   const batch=indices.slice(offset,offset+3);
+   const originals=batch.map(i=>captionItems[i]);
+   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),14000);
+   try{
+    const response=await fetch('/api/generate-captions-batch',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({texts:batch.map(i=>variantItems[i]),language,tone:$('captionTone').value,focus,allow_emojis:$('captionAllowEmojis').checked,instructions:$('captionInstructions').value,min_words:minWords,max_words:maxWords,excluded_captions:[...used].slice(-40)})});
+    if(!response.ok)throw Error('Caption API: '+response.status);
+    const data=await response.json(),results=Array.isArray(data.captions)?data.captions:[];
+    for(let j=0;j<batch.length;j++){
+     const i=batch[j],value=String(results[j]||'').trim(),key=captionUniqueKey(value);
+     if(value&&captionWordCount(value)>=minWords&&captionWordCount(value)<=maxWords&&!used.has(key)&&captionItems[i]===originals[j]){
+      used.delete(captionUniqueKey(originals[j]));captionItems[i]=value;used.add(key);refined++;
+     }
+    }
+    updateCaptionFields(batch);saveProjectLocally();
+   }catch(err){failed+=batch.length;console.warn('Caption batch unavailable',err)}
+   finally{clearTimeout(timer)}
+   $('captionStatus').textContent=(Math.min(offset+3,indices.length))+'/'+indices.length+' verwerkt · '+refined+' AI-captions.';
+   await new Promise(resolve=>setTimeout(resolve,0));
   }
-  if(refined){updateCaptionFields(indices);saveProjectLocally()}
-  $('captionStatus').textContent=refined+' captions met AI verfijnd.';
- }catch(err){
-  console.warn('Optional AI captions unavailable',err);
-  $('captionStatus').textContent='AI niet beschikbaar. Bestaande captions zijn behouden.';
- }finally{clearTimeout(timer);captionGenerationBusy=false;$('regenerateCaptions').disabled=false}
+  $('captionStatus').textContent=indices.length+' captions beschikbaar · '+refined+' AI-verfijnd'+(failed?' · overige conceptversies behouden':'')+'.';
+ }finally{captionGenerationBusy=false;$('generateCaptions').disabled=false;$('regenerateCaptions').disabled=false}
 }
 
 function switchWorkspace(which){
