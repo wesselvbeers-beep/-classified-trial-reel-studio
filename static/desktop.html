@@ -795,8 +795,7 @@ function localCaptionFallback(onscreen,i,minWords,maxWords,used,language){
   const candidate=valid[(i*7+offset)%valid.length],key=captionUniqueKey(candidate);
   if(!used.has(key)){used.add(key);return candidate}
  }
- // Explicitly fail rather than return nonsensical text or loop indefinitely.
- return '';
+ const alternatives=candidates.filter(value=>!used.has(captionUniqueKey(value)));const picked=alternatives[0]||candidates[i%candidates.length]||(language==='nl'?'Wat een moment.':'That was something.');const shortened=picked.trim().split(/\s+/).slice(0,Math.max(1,maxWords)).join(' ');used.add(captionUniqueKey(shortened));return shortened;
 }
 
 let captionGenerationBusy=false;
@@ -813,7 +812,7 @@ async function generateCaptions(selectedOnly=false){
  // Always show a relevant first draft for EVERY variant, even when AI is unavailable.
  for(const i of indices){
   const fallback=localCaptionFallback(variantItems[i],i,minWords,maxWords,used,language);
-  captionItems[i]=captionGenerationFormat(fallback||'');
+  captionItems[i]=captionGenerationFormat(fallback||(language==='nl'?'Wat een moment.':'That was something.'));
  }
  updateCaptionFields(indices);saveProjectLocally();
  $('captionStatus').textContent=indices.length+' eerste captions klaar. AI maakt ze passend bij de on-screen teksten…';
@@ -829,7 +828,7 @@ async function generateCaptions(selectedOnly=false){
    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),14000);
    try{
     const response=await fetch('/api/generate-captions-batch',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({texts:batch.map(i=>variantItems[i]),language,tone:$('captionTone').value,focus,allow_emojis:$('captionAllowEmojis').checked,instructions:$('captionInstructions').value,min_words:minWords,max_words:maxWords,excluded_captions:[...used].slice(-40)})});
-    if(!response.ok)throw Error('Caption API: '+response.status);
+    if(!response.ok){let detail='';try{detail=(await response.json()).detail||''}catch{}throw Error(detail||'Caption API: '+response.status)}
     const data=await response.json(),results=Array.isArray(data.captions)?data.captions:[];
     for(let j=0;j<batch.length;j++){
      const i=batch[j],value=String(results[j]||'').trim(),key=captionUniqueKey(value);
@@ -838,7 +837,7 @@ async function generateCaptions(selectedOnly=false){
      }
     }
     updateCaptionFields(batch);saveProjectLocally();
-   }catch(err){failed+=batch.length;console.warn('Caption batch unavailable',err)}
+   }catch(err){failed+=batch.length;console.warn('Caption batch unavailable',err);$('captionStatus').textContent='AI niet beschikbaar: '+err.message+'. Conceptcaptions blijven staan.'}
    finally{clearTimeout(timer)}
    $('captionStatus').textContent=(Math.min(offset+3,indices.length))+'/'+indices.length+' verwerkt · '+refined+' AI-captions.';
    await new Promise(resolve=>setTimeout(resolve,0));
