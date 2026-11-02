@@ -600,7 +600,7 @@ function syncVariantFromMaster(){
  v.style.transform=isVariantMirrored(activeVariant)?'scaleX(-1)':($('video').style.transform||'none');
  v.volume=$('video').volume;v.muted=$('video').muted;
  syncWorkspaceBlur('variantVideo','variantBlurBackground',isVariantMirrored(activeVariant));
- if(v.readyState>=1&&(v.currentTime<start||v.currentTime>end))v.currentTime=start;
+ if(v.readyState>=1&&(v.currentTime<start||v.currentTime>=end))v.currentTime=start;
  if(v.readyState>=2&&Math.abs(v.currentTime-start)>.05)v.currentTime=start;
  if(!variantThumb)captureVariantThumbnail();
  $('variantSeek').value=100*clamp((v.currentTime-start)/Math.max(.01,end-start),0,1);
@@ -672,7 +672,7 @@ function syncCaptionVideo(){
  $('captionVideoText').classList.add('variant-overlay');
  $('captionVideoText').textContent=variantSettings.fullCaps?(variantItems[captionActive]||'').toUpperCase():(variantItems[captionActive]||'');
  syncCaptionTypography();
- $('captionClock').textContent=fmt(Math.max(0,v.currentTime-start))+' / '+fmt(end-start);
+ updateCaptionPlaybackUI();
 }
 function renderCaptionGallery(){
  const box=$('captionGallery');box.replaceChildren();
@@ -931,9 +931,16 @@ $('captionExport').onclick=()=>{
  popup.onload=()=>{popup.focus();popup.print()};
  $('captionStatus').textContent='PDF-overzicht geopend. Kies in het afdrukvenster: Opslaan als PDF.';
 };
-$('captionPlay').onclick=()=>{const v=$('captionVideo');if(v.paused)v.play().catch(()=>{});else v.pause()};
-$('captionVideo').ontimeupdate=()=>{const v=$('captionVideo');if(v.currentTime>=end)v.pause();$('captionSeek').value=100*clamp((v.currentTime-start)/Math.max(.01,end-start),0,1);$('captionClock').textContent=fmt(Math.max(0,v.currentTime-start))+' / '+fmt(end-start)};
-$('captionSeek').oninput=e=>{$('captionVideo').currentTime=start+(end-start)*e.target.value/100};
+const captionTrimBounds=()=>{const duration=$('captionVideo').duration;const from=Math.max(0,Number(start)||0);const to=Math.max(from+.01,Number(end)||from+.01);return {from,to:Number.isFinite(duration)?Math.min(to,duration):to}};
+function updateCaptionPlaybackUI(){const v=$('captionVideo'),{from,to}=captionTrimBounds(),length=Math.max(.01,to-from);const elapsed=clamp(v.currentTime-from,0,length);$('captionSeek').value=100*elapsed/length;$('captionClock').textContent=fmt(elapsed)+' / '+fmt(length);$('captionPlay').textContent=v.paused?'▶':'Ⅱ'}
+function loopCaptionPreview(){const v=$('captionVideo'),{from,to}=captionTrimBounds();if(v.readyState<1)return;if(v.currentTime>=to-.035){v.currentTime=from;if(v.paused)v.play().catch(()=>{})}else if(v.currentTime<from-.035){v.currentTime=from}updateCaptionPlaybackUI()}
+$('captionPlay').onclick=()=>{const v=$('captionVideo');if(v.paused){const {from,to}=captionTrimBounds();if(v.currentTime>=to-.035||v.currentTime<from)v.currentTime=from;v.play().catch(()=>{})}else v.pause();updateCaptionPlaybackUI()};
+$('captionVideo').ontimeupdate=loopCaptionPreview;
+$('captionVideo').onended=()=>{const v=$('captionVideo');v.currentTime=captionTrimBounds().from;v.play().catch(()=>{});updateCaptionPlaybackUI()};
+$('captionVideo').onloadedmetadata=()=>{const v=$('captionVideo'),{from,to}=captionTrimBounds();if(v.currentTime<from||v.currentTime>=to)v.currentTime=from;updateCaptionPlaybackUI()};
+$('captionVideo').onplay=updateCaptionPlaybackUI;
+$('captionVideo').onpause=updateCaptionPlaybackUI;
+$('captionSeek').oninput=e=>{const {from,to}=captionTrimBounds();$('captionVideo').currentTime=from+(to-from)*Number(e.target.value)/100;updateCaptionPlaybackUI()};
 
 $('generateVariants').onclick=makeVariants;
 let originalEditedText='';$('variantText').onfocus=()=>{originalEditedText=variantItems[activeVariant]||''};$('variantText').onblur=()=>{const current=variantItems[activeVariant]||'';if(current!==originalEditedText){rememberFeedback('rejected',originalEditedText);rememberFeedback('preferred',current)}};
