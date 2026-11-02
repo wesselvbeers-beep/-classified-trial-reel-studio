@@ -863,7 +863,7 @@ function switchWorkspace(which){
   $('workflowIndicator').textContent='VARIANTEN · 2 / 3';$('exportTop').textContent='Varianten';$('exportTop').disabled=true;
   $('switchMaster').classList.remove('active');$('switchCaptions').classList.remove('active');$('switchVariants').classList.add('active');
   syncVariantFromMaster();
-  if(!variantItems.length&&Number($('variantCount').value)>0)ensureVariantSlots(Number($('variantCount').value));
+  if(!variantItems.length&&Number($('variantCount').value)>0&&!restoringProject)ensureVariantSlots(Number($('variantCount').value));
   if(!variantItems.length){
    // Do not auto-generate or replace user work when switching screens.
    $('variantGenerationInfo').textContent='Vul voorbeeldzinnen in en klik op Genereer teksten.';
@@ -998,6 +998,7 @@ function saveProjectLocally(){if(restoringProject||!file)return;clearTimeout(aut
 async function restoreLocalProject(){
  let saved;try{saved=JSON.parse(localStorage.getItem(projectStorageKey)||'null')}catch{return}
  if(!saved?.source)return;
+ // Keep the original saved data untouched until media restoration completes.
  restoringProject=true;
  try{
   const stored=await getSavedProjectFile();
@@ -1019,7 +1020,7 @@ async function restoreLocalProject(){
   $('video').volume=saved.volume??1;$('video').muted=!!saved.muted;
   $('video').style.objectFit=fit;applyGrade();syncBlur();refresh();panel();
   masterConfirmed=!!saved.masterConfirmed;
-  if(saved.workspace==='captions'&&variantItems.length)switchWorkspace('captions');
+  if(saved.workspace==='captions'&&variantItems.length){switchWorkspace('variants');switchWorkspace('captions')}
   else if(saved.workspace==='variants'&&variantItems.length)switchWorkspace('variants');
   $('status').textContent='✓ Project en video automatisch hersteld';
  }catch(err){console.warn('Project recovery failed',err);$('status').textContent='Automatisch herstellen mislukt: '+err.message}
