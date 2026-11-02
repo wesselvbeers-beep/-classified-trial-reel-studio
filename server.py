@@ -263,6 +263,7 @@ class Render(BaseModel):
  name:str='Trial_Reel'
  resolution:str='1080x1920'
  fps:float=25
+ video_bitrate_mbps:float|None=None
  csv:bool=False
  zip:bool=True
  position:str='center'
@@ -285,6 +286,7 @@ def render(data:Render):
  w,h=map(int,data.resolution.split('x'))
  if (w,h) not in ((1080,1920),(2160,3840)):raise HTTPException(400,'Ongeldige resolutie')
  if data.fps not in (23.976,24,25,29.97,30,50,59.94,60):raise HTTPException(400,'Ongeldige fps')
+ if data.video_bitrate_mbps is not None and not 4<=data.video_bitrate_mbps<=80:raise HTTPException(400,'Bitrate moet tussen 4 en 80 Mbps liggen')
  dur=probe(source); start=max(0,min(data.start,dur)); length=min(max(.2,data.length),max(.2,dur-start))
  job=uuid.uuid4().hex; outdir=WORK/job;outdir.mkdir()
  # The overlay is built using a drawtext filter with an escaped UTF-8 text file.
@@ -334,7 +336,8 @@ def render(data:Render):
   if data.textbar:vf+=':box=1:boxcolor=black@0.7:boxborderw=20'
   name=re.sub(r'[^A-Za-z0-9_-]','_',data.name)[:80] or 'Trial_Reel'
   target=outdir/f'{name}_{i+1}.mp4'
-  ff([*ss,'-i',str(inp),'-vf',vf,'-r',str(data.fps),'-c:v','libx264','-preset','veryfast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart',str(target)])
+  bitrate_args=(['-b:v',f'{data.video_bitrate_mbps:.1f}M','-maxrate',f'{data.video_bitrate_mbps*1.5:.1f}M','-bufsize',f'{data.video_bitrate_mbps*2:.1f}M'] if data.video_bitrate_mbps is not None else ['-crf','20'])
+  ff([*ss,'-i',str(inp),'-vf',vf,'-r',str(data.fps),'-c:v','libx264','-preset','veryfast',*bitrate_args,'-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart',str(target)])
   results.append(target)
  if data.csv:
   import csv
