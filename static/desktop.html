@@ -759,6 +759,7 @@ function localCaptionFallback(onscreen,i,minWords,maxWords,used,language){
 }
 
 let captionGenerationBusy=false;
+function captionTooSimilar(a,b){const clean=x=>String(x||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/ +/g,' ').trim();a=clean(a);b=clean(b);if(!a||!b)return false;if(a===b||a.includes(b)||b.includes(a))return true;const x=a.split(' '),y=b.split(' ');return x.filter(w=>y.includes(w)).length/Math.max(1,Math.min(x.length,y.length))>=0.8;}
 async function generateCaptions(selectedOnly=false){
  if(captionGenerationBusy){$('captionStatus').textContent='Captiongeneratie loopt al.';return}
  if(!variantItems.length){$('captionStatus').textContent='Genereer eerst on-screen teksten in venster 2.';return}
@@ -771,7 +772,7 @@ async function generateCaptions(selectedOnly=false){
  // Always show a relevant first draft for EVERY variant, even when AI is unavailable.
  for(const i of indices){
   const fallback=localCaptionFallback(variantItems[i],i,minWords,maxWords,used,language);
-  captionItems[i]=fallback||String(variantItems[i]||'').trim().replace(/[.!?]+$/,'').split(/\\s+/).slice(0,maxWords).join(' ')||'Listen to this one.';
+  captionItems[i]=fallback&&!captionTooSimilar(fallback,variantItems[i])?fallback:(language==='nl'?'Dat zag je niet aankomen.':'Did you see that coming?');
  }
  updateCaptionFields(indices);saveProjectLocally();
  $('captionStatus').textContent=indices.length+' eerste captions klaar. AI maakt ze passend bij de on-screen teksten…';
@@ -791,7 +792,7 @@ async function generateCaptions(selectedOnly=false){
     const data=await response.json(),results=Array.isArray(data.captions)?data.captions:[];
     for(let j=0;j<batch.length;j++){
      const i=batch[j],value=String(results[j]||'').trim(),key=captionUniqueKey(value);
-     if(value&&captionWordCount(value)>=minWords&&captionWordCount(value)<=maxWords&&!used.has(key)&&captionItems[i]===originals[j]){
+     if(value&&!captionTooSimilar(value,variantItems[i])&&captionWordCount(value)>=minWords&&captionWordCount(value)<=maxWords&&!used.has(key)&&captionItems[i]===originals[j]){
       used.delete(captionUniqueKey(originals[j]));captionItems[i]=value;used.add(key);refined++;
      }
     }
