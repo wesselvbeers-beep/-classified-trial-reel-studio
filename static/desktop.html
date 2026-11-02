@@ -688,7 +688,7 @@ function renderCaptionGallery(){
   const check=document.createElement('input');check.type='checkbox';check.className='caption-card-check';check.checked=captionSelected.has(i);check.onclick=e=>e.stopPropagation();check.onchange=()=>{if(check.checked)captionSelected.add(i);else captionSelected.delete(i);updateCaptionSelection()};
   image.append(overlay,check);image.onclick=()=>{captionActive=i;updateCaptionSelection();syncCaptionVideo()};
   const body=document.createElement('div');body.className='caption-card-body';const label=document.createElement('b');label.textContent='VARIANT '+String(i+1).padStart(2,'0');
-  const field=document.createElement('textarea');field.className='caption-card-text';field.value=captionCurrentText(i);field.placeholder='Nog geen caption';field.onfocus=()=>{captionActive=i;updateCaptionSelection();syncCaptionVideo()};field.oninput=()=>{captionItems[i]=field.value;if(captionActive===i)$('captionEditor').value=field.value;countCaptionChars();saveProjectLocally()};
+  const field=document.createElement('textarea');field.className='caption-card-text';field.value=captionCurrentText(i);field.placeholder='Nog geen caption';field.onfocus=()=>{captionActive=i;updateCaptionSelection();syncCaptionVideo()};field.oninput=()=>{const value=formatEditedCaption(field);captionItems[i]=value;if(captionActive===i)$('captionEditor').value=value;countCaptionChars();saveProjectLocally()};
   const footer=document.createElement('div');footer.className='caption-card-footer';const count=document.createElement('span');count.textContent=captionCurrentText(i).length+' tekens';field.addEventListener('input',()=>count.textContent=field.value.length+' tekens');
   const copy=document.createElement('button');copy.type='button';copy.textContent='Kopieer';copy.onclick=()=>navigator.clipboard.writeText(captionCurrentText(i)).then(()=>$('captionStatus').textContent='Caption gekopieerd.').catch(()=>$('captionStatus').textContent='Kopiëren niet toegestaan.');
   footer.append(count,copy);body.append(label,field,footer);card.append(image,body);frag.append(card);
@@ -735,6 +735,19 @@ function refreshCaptionFontOptions(){for(const select of [$('captionGenerationSt
 refreshCaptionFontOptions();
 $('captionGenerationStyle').onchange=()=>saveProjectLocally();
 function captionGenerationFormat(value){const style=$('captionGenerationStyle').value;return style?captionStyleText(value,style):value}
+function formatEditedCaption(field){
+ const style=$('captionGenerationStyle').value;
+ if(!style)return field.value;
+ const original=field.value,position=field.selectionStart,end=field.selectionEnd;
+ const formatted=captionStyleText(original,style);
+ if(formatted!==original){
+  const newStart=captionStyleText(original.slice(0,position),style).length;
+  const newEnd=captionStyleText(original.slice(0,end),style).length;
+  field.value=formatted;
+  field.setSelectionRange(newStart,newEnd);
+ }
+ return field.value;
+}
 function countCaptionChars(){$('captionCounter').textContent=$('captionEditor').value.length+' tekens'}
 function updateCaptionSelection(){
  $('captionGallery').querySelectorAll('.caption-card').forEach((card,i)=>card.classList.toggle('active',i===captionActive));
@@ -881,7 +894,7 @@ $('regenerateCaptions').textContent='AI verfijn geselecteerde';
 $('regenerateCaptions').onclick=()=>generateCaptions(true);
 $('captionSelectAll').onchange=e=>{captionSelected=e.target.checked?new Set(variantItems.map((_,i)=>i)):new Set();renderCaptionGallery()};
 $('captionClearSelection').onclick=()=>{captionSelected.clear();renderCaptionGallery()};
-$('captionEditor').oninput=e=>{captionItems[captionActive]=e.target.value;countCaptionChars();const field=$('captionGallery').querySelectorAll('.caption-card-text')[captionActive];if(field)field.value=e.target.value;saveProjectLocally()};
+$('captionEditor').oninput=e=>{const value=formatEditedCaption(e.target);captionItems[captionActive]=value;countCaptionChars();const field=$('captionGallery').querySelectorAll('.caption-card-text')[captionActive];if(field)field.value=value;saveProjectLocally()};
 $('captionCopy').onclick=()=>navigator.clipboard.writeText(captionCurrentText(captionActive)).then(()=>$('captionStatus').textContent='Caption gekopieerd.').catch(()=>$('captionStatus').textContent='Kopiëren niet toegestaan.');
 $('captionExport').onclick=()=>{
  const indices=[...captionSelected].sort((a,b)=>a-b);if(!indices.length){$('captionStatus').textContent='Selecteer eerst varianten.';return}
