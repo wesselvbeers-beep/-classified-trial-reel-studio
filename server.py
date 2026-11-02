@@ -341,7 +341,7 @@ def render(data:Render, progress_job:str|None=None):
   name=re.sub(r'[^A-Za-z0-9_-]','_',data.name)[:80] or 'Trial_Reel'
   target=outdir/f'{name}_{data.variant_numbers[i] if data.variant_numbers else i+1}.mp4'
   bitrate_args=(['-b:v',f'{data.video_bitrate_mbps:.1f}M','-maxrate',f'{data.video_bitrate_mbps*1.5:.1f}M','-bufsize',f'{data.video_bitrate_mbps*2:.1f}M'] if data.video_bitrate_mbps is not None else ['-crf','20'])
-  args=['-threads','1',*ss,'-i',str(inp),'-filter_threads','1','-vf',vf,'-r',str(data.fps),'-c:v','libx264','-threads','1','-preset','ultrafast',*bitrate_args,'-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart']
+  args=['-threads','1','-sws_flags','fast_bilinear',*ss,'-i',str(inp),'-filter_threads','1','-vf',vf,'-r',str(data.fps),'-c:v','libx264','-threads','1','-preset','ultrafast','-tune','fastdecode',*bitrate_args,'-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart','-max_muxing_queue_size','1024']
   if progress_job:
    args+=['-progress','pipe:1','-nostats']
    process=subprocess.Popen(['ffmpeg','-hide_banner','-loglevel','error','-y',*args,str(target)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,bufsize=1)
