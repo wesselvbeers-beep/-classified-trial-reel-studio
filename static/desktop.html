@@ -768,7 +768,7 @@ function updateCaptionWordLimits(changed){
 }
 $('captionMinWords').oninput=()=>updateCaptionWordLimits('min');
 $('captionMaxWords').oninput=()=>updateCaptionWordLimits('max');
-function localCaptionFallback(onscreen,i,minWords,maxWords,used,language){
+function localCaptionFallback(onscreen,i,minWords,maxWords,used,language,focus=[]){
  const source=String(onscreen||'').toLowerCase();
  const topic=/crowd|people|everyone/.test(source)?'crowd':/kick|zaag/.test(source)?'kick':/track|sound/.test(source)?'track':'drop';
  const en={
@@ -784,8 +784,20 @@ function localCaptionFallback(onscreen,i,minWords,maxWords,used,language){
   track:['Deze track gaat hard.','Zet deze track harder.','Wat een absurd geluid.','Deze verdient een replay.','De energie in deze track.','Deze staat op repeat.','Die switch kwam onverwacht.','Luister naar dat sounddesign.','Dit is een serieuze plaat.','Deze track blijft maar gaan.','Dat stukje blijft hard.','Dit moet je horen.']
  };
  const bank=language==='nl'?nl:en;
- // First use subject-relevant phrases, then other curated phrases. Never pad with repeated words.
- const candidates=[...bank[topic],...Object.entries(bank).filter(([name])=>name!==topic).flatMap(([,items])=>items)];
+ const focusMap={drop:'drop',kick:'kick',crowd:'crowd',energy:'energy','fast / hype':'hype',fast:'hype',hype:'hype'};
+ const active=[...new Set(focus.map(x=>focusMap[String(x).toLowerCase()]||String(x).toLowerCase()))];
+ const focusPhrases=language==='nl'?{
+  energy:['Die energie voel je door het hele publiek.','De sfeer bereikt hier echt een nieuw niveau.','Dit is pure energie van begin tot eind.'],
+  hype:['Dit is precies het moment waarop alles losgaat.','Die spanning voor de volgende klap is niet normaal.','Hier wil je gewoon middenin staan.']
+ }:{
+  energy:['The energy in that room was absolutely unreal.','You can feel the energy through the entire crowd.','This is what pure energy sounds like.'],
+  hype:['The anticipation before that moment was something else.','This is the kind of moment everyone waits for.','The whole place was about to explode.']
+ };
+ const focusedTopics=active.length?active.filter(x=>bank[x]||focusPhrases[x]):[topic];
+ const pools=focusedTopics.map(x=>bank[x]||focusPhrases[x]);
+ const focusedCandidates=pools.flatMap((pool,j)=>pool.map((text,k)=>({text,rank:(k+i*7+j*5)%pool.length}))).sort((a,b)=>a.rank-b.rank).map(x=>x.text);
+ const candidates=[...focusedCandidates,...bank[topic],...Object.entries(bank).filter(([name])=>name!==topic).flatMap(([,items])=>items)];
+ const targetTopic=focusedTopics[i%focusedTopics.length]||topic;
  const desiredMin=Math.min(maxWords,Math.max(minWords,Math.ceil(maxWords*.7)));
  const endings=language==='nl'?{
   drop:['En precies daarom wil je deze drop nog een keer horen.','Dit is zo een moment dat je niet snel vergeet.','Het publiek voelde meteen dat er iets ging gebeuren.'],
@@ -803,7 +815,7 @@ function localCaptionFallback(onscreen,i,minWords,maxWords,used,language){
   const base=candidates[(i*7+offset)%candidates.length];
   variants.push(base);
   const first=base.replace(/[.!?]+$/,'');
-  for(const ending of endings[topic]){
+  for(const ending of endings[targetTopic]||endings[topic]){
    const combined=first+'. '+ending;
    if(captionWordCount(combined)<=maxWords)variants.push(combined);
   }
@@ -828,18 +840,18 @@ async function generateCaptions(selectedOnly=false){
  const minWords=Math.max(1,Math.min(20,Number($('captionMinWords').value)||2));
  const maxWords=Math.max(minWords,Math.min(20,Number($('captionMaxWords').value)||6));
  const language=$('captionLanguage').value;
+ const focus=[...document.querySelectorAll('.caption-focus input:checked')].map(el=>el.value);
  const preferredMin=Math.min(maxWords,Math.max(minWords,Math.ceil(maxWords*.7)));
  const used=new Set(captionItems.filter((_,i)=>!indices.includes(i)).map(captionUniqueKey).filter(Boolean));
  // Always show a relevant first draft for EVERY variant, even when AI is unavailable.
  for(const i of indices){
-  const fallback=localCaptionFallback(variantItems[i],i,minWords,maxWords,used,language);
+  const fallback=localCaptionFallback(variantItems[i],i,minWords,maxWords,used,language,focus);
   captionItems[i]=captionGenerationFormat(fallback||(language==='nl'?'Wat een moment.':'That was something.'));
  }
  updateCaptionFields(indices);saveProjectLocally();
  $('captionStatus').textContent=indices.length+' eerste captions klaar. AI maakt ze passend bij de on-screen teksten…';
  captionGenerationBusy=true;
  $('generateCaptions').disabled=true;$('regenerateCaptions').disabled=true;
- const focus=[...document.querySelectorAll('.caption-focus input:checked')].map(el=>el.value);
  let refined=0,failed=0;
  try{
   // Small sequential batches avoid huge responses and keep the browser responsive.
