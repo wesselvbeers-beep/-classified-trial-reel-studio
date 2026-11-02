@@ -694,6 +694,24 @@ function renderCaptionGallery(){
   footer.append(count,copy);body.append(label,field,footer);card.append(image,body);frag.append(card);
  });box.append(frag);updateCaptionSelection();requestAnimationFrame(syncCaptionTypography);
 }
+function updateCaptionFields(indices){
+ // Update text nodes only; never destroy/recreate video preview cards during generation.
+ const cards=$('captionGallery').querySelectorAll('.caption-card');
+ for(const i of indices){
+  const card=cards[i];if(!card)continue;
+  const value=captionCurrentText(i),field=card.querySelector('.caption-card-text');
+  if(field&&document.activeElement!==field)field.value=value;
+  const counter=card.querySelector('.caption-card-footer span');
+  if(counter)counter.textContent=value.length+' tekens';
+ }
+ if(document.activeElement!==$('captionEditor'))$('captionEditor').value=captionCurrentText(captionActive);
+ countCaptionChars();
+ const summary=$('captionSelectedSummary');
+ if(summary)for(const row of summary.children){
+  const match=/VARIANT (\\d+)/.exec(row.textContent||'');
+  if(match){const i=Number(match[1])-1;row.textContent='VARIANT '+String(i+1).padStart(2,'0')+' · '+(captionCurrentText(i)||'Nog geen caption')}
+ }
+}
 function countCaptionChars(){$('captionCounter').textContent=$('captionEditor').value.length+' tekens'}
 function updateCaptionSelection(){
  $('captionGallery').querySelectorAll('.caption-card').forEach((card,i)=>card.classList.toggle('active',i===captionActive));
@@ -735,7 +753,7 @@ async function generateCaptions(selectedOnly=false){
  if(!selectedOnly){
   // Fast default: no video processing, no network and no AI request.
   for(const i of indices)captionItems[i]=localCaptionFallback(variantItems[i],i,minWords,maxWords,used,$('captionLanguage').value);
-  renderCaptionGallery();saveProjectLocally();
+  updateCaptionFields(indices);saveProjectLocally();
   $('captionStatus').textContent=indices.length+' captions klaar. Selecteer varianten voor optionele AI-verfijning.';
   return;
  }
@@ -755,7 +773,7 @@ async function generateCaptions(selectedOnly=false){
     captionItems[i]=value;used.add(key);refined++;
    }
   }
-  if(refined){renderCaptionGallery();saveProjectLocally()}
+  if(refined){updateCaptionFields(indices);saveProjectLocally()}
   $('captionStatus').textContent=refined+' captions met AI verfijnd.';
  }catch(err){
   console.warn('Optional AI captions unavailable',err);
