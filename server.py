@@ -341,10 +341,10 @@ def render(data:Render, progress_job:str|None=None):
   name=re.sub(r'[^A-Za-z0-9_-]','_',data.name)[:80] or 'Trial_Reel'
   target=outdir/f'{name}_{data.variant_numbers[i] if data.variant_numbers else i+1}.mp4'
   bitrate_args=(['-b:v',f'{data.video_bitrate_mbps:.1f}M','-maxrate',f'{data.video_bitrate_mbps*1.5:.1f}M','-bufsize',f'{data.video_bitrate_mbps*2:.1f}M'] if data.video_bitrate_mbps is not None else ['-crf','20'])
-  args=[*ss,'-i',str(inp),'-vf',vf,'-r',str(data.fps),'-c:v','libx264','-preset','veryfast',*bitrate_args,'-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart']
+  args=['-threads','1',*ss,'-i',str(inp),'-filter_threads','1','-vf',vf,'-r',str(data.fps),'-c:v','libx264','-threads','1','-preset','ultrafast',*bitrate_args,'-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart']
   if progress_job:
    args+=['-progress','pipe:1','-nostats']
-   process=subprocess.Popen(['ffmpeg','-hide_banner','-loglevel','error','-y',*args,str(target)],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,bufsize=1)
+   process=subprocess.Popen(['ffmpeg','-hide_banner','-loglevel','error','-y',*args,str(target)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,bufsize=1)
    for line in process.stdout:
     if line.startswith('out_time_ms=') or line.startswith('out_time_us='):
      try:
@@ -353,7 +353,8 @@ def render(data:Render, progress_job:str|None=None):
        if progress_job in RENDER_JOBS:
         RENDER_JOBS[progress_job].update(phase='rendering',current=i+1,completed=i,percent=min(98,round(100*(i+min(1,elapsed/max(.2,length)))/len(data.texts),1)))
      except (ValueError,ZeroDivisionError):pass
-   if process.wait()!=0:raise HTTPException(500,f'FFmpeg render mislukt bij variant {i+1}')
+   error_output=process.stderr.read()[-900:]
+   if process.wait()!=0:raise HTTPException(500,f'FFmpeg variant {i+1}: {error_output}')
   else:ff([*args,str(target)])
   results.append(target)
   if progress_job:
