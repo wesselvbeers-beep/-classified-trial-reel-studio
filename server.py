@@ -262,6 +262,7 @@ class Render(BaseModel):
  lut_id:str|None=None
  lut_strength:float=100
  texts:list[str]=[]
+ variant_numbers:list[int]|None=None
  name:str='Trial_Reel'
  resolution:str='1080x1920'
  fps:float=25
@@ -285,6 +286,7 @@ def render(data:Render, progress_job:str|None=None):
  source=next((p for p in WORK.glob(data.id+'.*') if p.suffix in ('.mp4','.mov')),None)
  if not source:raise HTTPException(404,'Video niet gevonden')
  if not data.texts or len(data.texts)>100:raise HTTPException(400,'Kies 1-100 teksten')
+ if data.variant_numbers is not None and (len(data.variant_numbers)!=len(data.texts) or any(n<1 or n>100 for n in data.variant_numbers)):raise HTTPException(400,'Ongeldige variantnummers')
  w,h=map(int,data.resolution.split('x'))
  if (w,h) not in ((1080,1920),(2160,3840)):raise HTTPException(400,'Ongeldige resolutie')
  if data.fps not in (23.976,24,25,29.97,30,50,59.94,60):raise HTTPException(400,'Ongeldige fps')
@@ -337,7 +339,7 @@ def render(data:Render, progress_job:str|None=None):
    vf+=f":shadowcolor=black@{opacity:.3f}:shadowx={shadow_x}:shadowy={shadow_y}"
   if data.textbar:vf+=':box=1:boxcolor=black@0.7:boxborderw=20'
   name=re.sub(r'[^A-Za-z0-9_-]','_',data.name)[:80] or 'Trial_Reel'
-  target=outdir/f'{name}_{i+1}.mp4'
+  target=outdir/f'{name}_{data.variant_numbers[i] if data.variant_numbers else i+1}.mp4'
   bitrate_args=(['-b:v',f'{data.video_bitrate_mbps:.1f}M','-maxrate',f'{data.video_bitrate_mbps*1.5:.1f}M','-bufsize',f'{data.video_bitrate_mbps*2:.1f}M'] if data.video_bitrate_mbps is not None else ['-crf','20'])
   args=[*ss,'-i',str(inp),'-vf',vf,'-r',str(data.fps),'-c:v','libx264','-preset','veryfast',*bitrate_args,'-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart']
   if progress_job:
@@ -364,7 +366,7 @@ def render(data:Render, progress_job:str|None=None):
  with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as z:
   for p in outdir.iterdir():
    if p in results or p.name=='captions.csv':z.write(p,p.name)
- return {'download':'/api/download/'+job,'files':[p.name for p in results]}
+ return {'download':'/api/download/'+job,'files':[p.name for p in results],'file_urls':['/api/download-file/'+job+'/'+p.name for p in results]}
 @app.post('/api/render/start')
 def start_render(data:Render):
  job=uuid.uuid4().hex
@@ -372,7 +374,7 @@ def start_render(data:Render):
  def worker():
   try:
    result=render(data,progress_job=job)
-   with RENDER_LOCK:RENDER_JOBS[job].update(phase='done',percent=100,completed=len(data.texts),current=len(data.texts),download=result['download'])
+   with RENDER_LOCK:RENDER_JOBS[job].update(phase='done',percent=100,completed=len(data.texts),current=len(data.texts),download=result['download'],files=result['files'],file_urls=result['file_urls'])
   except Exception as exc:
    with RENDER_LOCK:RENDER_JOBS[job].update(phase='error',error=str(getattr(exc,'detail',exc))[:300])
  threading.Thread(target=worker,daemon=True).start()
@@ -384,6 +386,12 @@ def render_progress(job:str):
   state=RENDER_JOBS.get(job)
   if not state:raise HTTPException(404,'Rendertaak niet gevonden')
   return dict(state)
+@app.get('/api/download-file/{ident}/{filename}')
+def download_file(ident:str,filename:str):
+ if not re.fullmatch('[0-9a-f]{32}',ident) or not re.fullmatch('[A-Za-z0-9_-]{1,80}_[0-9]{1,3}\\.mp4',filename):raise HTTPException(404)
+ path=WORK/ident/filename
+ if not path.is_file():raise HTTPException(404,'MP4 niet gevonden')
+ return FileResponse(path,filename=filename,media_type='video/mp4')
 @app.get('/api/download/{ident}')
 def download(ident:str):
  if not re.fullmatch('[0-9a-f]{32}',ident):raise HTTPException(404)
