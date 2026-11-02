@@ -786,12 +786,36 @@ function localCaptionFallback(onscreen,i,minWords,maxWords,used,language){
  const bank=language==='nl'?nl:en;
  // First use subject-relevant phrases, then other curated phrases. Never pad with repeated words.
  const candidates=[...bank[topic],...Object.entries(bank).filter(([name])=>name!==topic).flatMap(([,items])=>items)];
- const valid=candidates.filter(value=>captionWordCount(value)>=minWords&&captionWordCount(value)<=maxWords);
- for(let offset=0;offset<valid.length;offset++){
-  const candidate=valid[(i*7+offset)%valid.length],key=captionUniqueKey(candidate);
-  if(!used.has(key)){used.add(key);return candidate}
+ const desiredMin=Math.min(maxWords,Math.max(minWords,Math.ceil(maxWords*.7)));
+ const endings=language==='nl'?{
+  drop:['En precies daarom wil je deze drop nog een keer horen.','Dit is zo een moment dat je niet snel vergeet.','Het publiek voelde meteen dat er iets ging gebeuren.'],
+  kick:['Die combinatie van kicks en energie blijft echt hangen.','Elke nieuwe kick maakt deze track alleen maar harder.','Je voelt de impact vanaf het allereerste moment.'],
+  crowd:['De reactie van het publiek vertelt eigenlijk het hele verhaal.','Dit soort momenten maken een nacht onvergetelijk.','Iedereen ging mee in de energie van de muziek.'],
+  track:['Dit is er eentje die je direct opnieuw wilt afspelen.','Van de eerste seconde tot de laatste blijft hij verrassen.','Deze sound blijft nog wel even in je hoofd zitten.']
+ }:{
+  drop:['And the crowd was not ready for what happened next.','That is the kind of moment you need to experience live.','The energy shifted the second that drop finally landed.'],
+  kick:['Every single kick takes the energy to another level.','The sound just keeps getting harder with every switch.','You can feel the impact from the very first hit.'],
+  crowd:['The reaction from the crowd really says it all.','This is exactly why those live moments hit differently.','Every single person in that room felt the energy.'],
+  track:['This is one of those tracks you immediately replay.','From the first second it just keeps building energy.','The sound stays with you long after the music stops.']
+ };
+ const variants=[];
+ for(let offset=0;offset<candidates.length;offset++){
+  const base=candidates[(i*7+offset)%candidates.length];
+  variants.push(base);
+  const first=base.replace(/[.!?]+$/,'');
+  for(const ending of endings[topic]){
+   const combined=first+'. '+ending;
+   if(captionWordCount(combined)<=maxWords)variants.push(combined);
+  }
  }
- const alternatives=candidates.filter(value=>!used.has(captionUniqueKey(value)));const picked=alternatives[0]||candidates[i%candidates.length]||(language==='nl'?'Wat een moment.':'That was something.');const shortened=picked.trim().split(/\s+/).slice(0,Math.max(1,maxWords)).join(' ');used.add(captionUniqueKey(shortened));return shortened;
+ // Prefer longer captions when the user raises the maximum word count.
+ variants.sort((a,b)=>Math.abs(captionWordCount(a)-desiredMin)-Math.abs(captionWordCount(b)-desiredMin));
+ for(const candidate of variants){
+  const count=captionWordCount(candidate),key=captionUniqueKey(candidate);
+  if(count>=minWords&&count<=maxWords&&!used.has(key)&&!captionTooSimilar(candidate,onscreen)){used.add(key);return candidate}
+ }
+ const fallback=candidates.find(value=>captionWordCount(value)<=maxWords&&!used.has(captionUniqueKey(value)))||candidates[i%candidates.length];
+ used.add(captionUniqueKey(fallback));return fallback;
 }
 
 let captionGenerationBusy=false;
@@ -804,6 +828,7 @@ async function generateCaptions(selectedOnly=false){
  const minWords=Math.max(1,Math.min(20,Number($('captionMinWords').value)||2));
  const maxWords=Math.max(minWords,Math.min(20,Number($('captionMaxWords').value)||6));
  const language=$('captionLanguage').value;
+ const preferredMin=Math.min(maxWords,Math.max(minWords,Math.ceil(maxWords*.7)));
  const used=new Set(captionItems.filter((_,i)=>!indices.includes(i)).map(captionUniqueKey).filter(Boolean));
  // Always show a relevant first draft for EVERY variant, even when AI is unavailable.
  for(const i of indices){
@@ -823,12 +848,12 @@ async function generateCaptions(selectedOnly=false){
    const originals=batch.map(i=>captionItems[i]);
    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),14000);
    try{
-    const response=await fetch('/api/generate-captions-batch',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({texts:batch.map(i=>variantItems[i]),language,tone:$('captionTone').value,focus,allow_emojis:$('captionAllowEmojis').checked,instructions:$('captionInstructions').value,min_words:minWords,max_words:maxWords,excluded_captions:[...used].slice(-40)})});
+    const response=await fetch('/api/generate-captions-batch',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({texts:batch.map(i=>variantItems[i]),language,tone:$('captionTone').value,focus,allow_emojis:$('captionAllowEmojis').checked,instructions:$('captionInstructions').value,min_words:preferredMin,max_words:maxWords,excluded_captions:[...used].slice(-40)})});
     if(!response.ok){let detail='';try{detail=(await response.json()).detail||''}catch{}throw Error(detail||'Caption API: '+response.status)}
     const data=await response.json(),results=Array.isArray(data.captions)?data.captions:[];
     for(let j=0;j<batch.length;j++){
      const i=batch[j],value=String(results[j]||'').trim(),key=captionUniqueKey(value);
-     if(value&&!captionTooSimilar(value,variantItems[i])&&captionWordCount(value)>=minWords&&captionWordCount(value)<=maxWords&&!used.has(key)&&captionItems[i]===originals[j]){
+     if(value&&!captionTooSimilar(value,variantItems[i])&&captionWordCount(value)>=preferredMin&&captionWordCount(value)<=maxWords&&!used.has(key)&&captionItems[i]===originals[j]){
       used.delete(captionUniqueKey(originals[j]));captionItems[i]=captionGenerationFormat(value);used.add(key);refined++;
      }
     }
