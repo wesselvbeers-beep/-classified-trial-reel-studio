@@ -897,7 +897,7 @@ $('captionClearSelection').onclick=()=>{captionSelected.clear();renderCaptionGal
 $('captionEditor').oninput=e=>{const value=formatEditedCaption(e.target);captionItems[captionActive]=value;countCaptionChars();const field=$('captionGallery').querySelectorAll('.caption-card-text')[captionActive];if(field)field.value=value;saveProjectLocally()};
 $('captionCopy').onclick=()=>navigator.clipboard.writeText(captionCurrentText(captionActive)).then(()=>$('captionStatus').textContent='Caption gekopieerd.').catch(()=>$('captionStatus').textContent='Kopiëren niet toegestaan.');
 function selectedCaptionIndices(){return [...captionSelected].filter(i=>i>=0&&i<variantItems.length).sort((a,b)=>a-b)}
-function captionListText(indices){return indices.map(i=>(i+1)+'. '+captionCurrentText(i)).join('\\n\\n')}
+function captionListText(indices){return indices.map(i=>(i+1)+'. '+captionCurrentText(i)).join('\n\n')}
 $('captionCopyList').onclick=async()=>{
  const indices=selectedCaptionIndices();
  if(!indices.length){$('captionStatus').textContent='Selecteer eerst de captions die je wilt kopiëren.';return}
