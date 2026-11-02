@@ -3,11 +3,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pathlib import Path
-import subprocess, uuid, json, shutil, re, zipfile, math, array, sys, os, urllib.request, urllib.error
+import subprocess, uuid, json, shutil, re, zipfile, math, array, sys, os, urllib.request, urllib.error, threading, time
 
 ROOT=Path(__file__).parent
 WORK=ROOT/'work'; WORK.mkdir(exist_ok=True)
 app=FastAPI(title='Classified Trial Reel Studio')
+RENDER_JOBS={}
+RENDER_LOCK=threading.Lock()
 app.mount('/static',StaticFiles(directory=ROOT/'static'),name='static')
 @app.get('/')
 def home():return FileResponse(ROOT/'static'/'dashboard.html')
@@ -278,7 +280,7 @@ class Render(BaseModel):
  shadow_opacity:float=95
  shadow_angle:float=135
 @app.post('/api/render')
-def render(data:Render):
+def render(data:Render, progress_job:str|None=None):
  if not re.fullmatch('[0-9a-f]{32}',data.id):raise HTTPException(400,'Ongeldig bestand')
  source=next((p for p in WORK.glob(data.id+'.*') if p.suffix in ('.mp4','.mov')),None)
  if not source:raise HTTPException(404,'Video niet gevonden')
@@ -337,8 +339,23 @@ def render(data:Render):
   name=re.sub(r'[^A-Za-z0-9_-]','_',data.name)[:80] or 'Trial_Reel'
   target=outdir/f'{name}_{i+1}.mp4'
   bitrate_args=(['-b:v',f'{data.video_bitrate_mbps:.1f}M','-maxrate',f'{data.video_bitrate_mbps*1.5:.1f}M','-bufsize',f'{data.video_bitrate_mbps*2:.1f}M'] if data.video_bitrate_mbps is not None else ['-crf','20'])
-  ff([*ss,'-i',str(inp),'-vf',vf,'-r',str(data.fps),'-c:v','libx264','-preset','veryfast',*bitrate_args,'-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart',str(target)])
+  args=[*ss,'-i',str(inp),'-vf',vf,'-r',str(data.fps),'-c:v','libx264','-preset','veryfast',*bitrate_args,'-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart']
+  if progress_job:
+   args+=['-progress','pipe:1','-nostats']
+   process=subprocess.Popen(['ffmpeg','-hide_banner','-loglevel','error','-y',*args,str(target)],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,bufsize=1)
+   for line in process.stdout:
+    if line.startswith('out_time_ms=') or line.startswith('out_time_us='):
+     try:
+      elapsed=max(0,float(line.partition('=')[2])/1000000)
+      with RENDER_LOCK:
+       if progress_job in RENDER_JOBS:
+        RENDER_JOBS[progress_job].update(phase='rendering',current=i+1,completed=i,percent=min(98,round(100*(i+min(1,elapsed/max(.2,length)))/len(data.texts),1)))
+     except (ValueError,ZeroDivisionError):pass
+   if process.wait()!=0:raise HTTPException(500,f'FFmpeg render mislukt bij variant {i+1}')
+  else:ff([*args,str(target)])
   results.append(target)
+  if progress_job:
+   with RENDER_LOCK:RENDER_JOBS[progress_job].update(completed=i+1,percent=min(99,round(100*(i+1)/len(data.texts),1)))
  if data.csv:
   import csv
   with (outdir/'captions.csv').open('w',newline='',encoding='utf-8-sig') as f:
@@ -348,6 +365,25 @@ def render(data:Render):
   for p in outdir.iterdir():
    if p in results or p.name=='captions.csv':z.write(p,p.name)
  return {'download':'/api/download/'+job,'files':[p.name for p in results]}
+@app.post('/api/render/start')
+def start_render(data:Render):
+ job=uuid.uuid4().hex
+ with RENDER_LOCK:RENDER_JOBS[job]={'phase':'queued','percent':0,'completed':0,'current':0,'total':len(data.texts),'created':time.time()}
+ def worker():
+  try:
+   result=render(data,progress_job=job)
+   with RENDER_LOCK:RENDER_JOBS[job].update(phase='done',percent=100,completed=len(data.texts),current=len(data.texts),download=result['download'])
+  except Exception as exc:
+   with RENDER_LOCK:RENDER_JOBS[job].update(phase='error',error=str(getattr(exc,'detail',exc))[:300])
+ threading.Thread(target=worker,daemon=True).start()
+ return {'job_id':job}
+@app.get('/api/render/progress/{job}')
+def render_progress(job:str):
+ if not re.fullmatch('[0-9a-f]{32}',job):raise HTTPException(404)
+ with RENDER_LOCK:
+  state=RENDER_JOBS.get(job)
+  if not state:raise HTTPException(404,'Rendertaak niet gevonden')
+  return dict(state)
 @app.get('/api/download/{ident}')
 def download(ident:str):
  if not re.fullmatch('[0-9a-f]{32}',ident):raise HTTPException(404)
