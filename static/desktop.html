@@ -811,7 +811,7 @@ async function generateCaptions(selectedOnly=false){
  // Always show a relevant first draft for EVERY variant, even when AI is unavailable.
  for(const i of indices){
   const fallback=localCaptionFallback(variantItems[i],i,minWords,maxWords,used,language);
-  captionItems[i]=captionGenerationFormat(fallback&&!captionTooSimilar(fallback,variantItems[i])?fallback:(language==='nl'?'Dat zag je niet aankomen.':'Did you see that coming?'));
+  captionItems[i]=captionGenerationFormat(fallback||'');
  }
  updateCaptionFields(indices);saveProjectLocally();
  $('captionStatus').textContent=indices.length+' eerste captions klaar. AI maakt ze passend bij de on-screen teksten…';
@@ -989,7 +989,7 @@ const projectStorageKey='classified-trial-reel-studio-project-v1';
 function openProjectDB(){return new Promise((resolve,reject)=>{const req=indexedDB.open('classified-trial-reel-studio',1);req.onupgradeneeded=()=>req.result.createObjectStore('files');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
 async function persistProjectFile(f){try{const db=await openProjectDB();await new Promise((resolve,reject)=>{const tx=db.transaction('files','readwrite');tx.objectStore('files').put(f,'active');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});projectFileSaved=true;db.close()}catch(err){projectFileSaved=false;$('status').textContent='Video kon niet lokaal worden opgeslagen. Bewaar een kopie van je bestand.';console.warn('Project video autosave failed',err)}}
 async function getSavedProjectFile(){const db=await openProjectDB();try{return await new Promise((resolve,reject)=>{const req=db.transaction('files','readonly').objectStore('files').get('active');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}finally{db.close()}}
-function projectState(){return {version:1,source:file?.name||'',start,end,drop,dropLocked,clipOffset,videoPlaced,audioPlaced,fit,mirror,blurEnabled,blurIntensity,grade:{...grade},caption,lutId,variantItems:[...variantItems],captionItems:[...captionItems],activeVariant,variantSettings:{...variantSettings},guideInstagram:$('guideInstagram').checked,alternateMirror,variantCount:$('variantCount').value,variantTheme:$('variantTheme').value,variantGenre:$('variantGenre').value,variantVoice:$('variantVoice').value,variantAllowEmojis:$('variantAllowEmojis').checked,captionAllowEmojis:$('captionAllowEmojis').checked,captionLanguage:$('captionLanguage').value,captionTone:$('captionTone').value,captionInstructions:$('captionInstructions').value,captionMinWords:$('captionMinWords').value,captionMaxWords:$('captionMaxWords').value,variantName:$('variantName').value,variantResolution:$('variantResolution').value,variantFps:$('variantFps').value,masterConfirmed,volume:$('video').volume,muted:$('video').muted}}
+function projectState(){return {version:1,source:file?.name||'',start,end,drop,dropLocked,clipOffset,videoPlaced,audioPlaced,fit,mirror,blurEnabled,blurIntensity,grade:{...grade},caption,lutId,variantItems:[...variantItems],captionItems:[...captionItems],activeVariant,variantSettings:{...variantSettings},guideInstagram:$('guideInstagram').checked,alternateMirror,variantCount:$('variantCount').value,variantTheme:$('variantTheme').value,variantGenre:$('variantGenre').value,variantVoice:$('variantVoice').value,variantAllowEmojis:$('variantAllowEmojis').checked,captionAllowEmojis:$('captionAllowEmojis').checked,captionLanguage:$('captionLanguage').value,captionTone:$('captionTone').value,captionInstructions:$('captionInstructions').value,captionMinWords:$('captionMinWords').value,captionMaxWords:$('captionMaxWords').value,variantName:$('variantName').value,variantResolution:$('variantResolution').value,variantFps:$('variantFps').value,masterConfirmed,workspace:!$('captionWorkspace').classList.contains('hidden')?'captions':!$('variantWorkspace').classList.contains('hidden')?'variants':'master',captionGenerationStyle:$('captionGenerationStyle').value,volume:$('video').volume,muted:$('video').muted}}
 let autosaveTimer=null;
 function flushProjectSave(){if(restoringProject||!file)return;try{const state=JSON.stringify(projectState());if(state!==lastAutosave){localStorage.setItem(projectStorageKey,state);lastAutosave=state}}catch(err){console.warn('Project state autosave failed',err)}}
 function saveProjectLocally(){if(restoringProject||!file)return;clearTimeout(autosaveTimer);autosaveTimer=setTimeout(flushProjectSave,650)}
@@ -999,9 +999,9 @@ async function restoreLocalProject(){
  restoringProject=true;
  try{
   const stored=await getSavedProjectFile();
-  if(!stored||stored.name!==saved.source){$('status').textContent='Project gevonden, maar de lokale videobron ontbreekt. Upload de video opnieuw.';return}
+  if(!stored||stored.name!==saved.source){variantItems=Array.isArray(saved.variantItems)?saved.variantItems:[];captionItems=Array.isArray(saved.captionItems)?saved.captionItems:[];$('status').textContent='Teksten en captions zijn bewaard. Upload de masterclip opnieuw om verder te werken.';return}
   await load(stored);
-  if(!id){$('status').textContent='Video lokaal teruggevonden, maar opnieuw uploaden is niet gelukt.';return}
+  if(!id){$('status').textContent='Video lokaal teruggevonden, maar upload niet gelukt. Je projectgegevens blijven bewaard.';return}
   start=clamp(saved.start??0,0,duration);end=clamp(saved.end??duration,start+.2,duration);
   drop=clamp(saved.drop??0,0,duration);dropLocked=!!saved.dropLocked;
   clipOffset=saved.clipOffset||0;videoPlaced=saved.videoPlaced!==false;audioPlaced=saved.audioPlaced!==false;
@@ -1010,12 +1010,14 @@ async function restoreLocalProject(){
   variantItems=Array.isArray(saved.variantItems)?saved.variantItems:[];captionItems=Array.isArray(saved.captionItems)?saved.captionItems:[];activeVariant=clamp(saved.activeVariant||0,0,Math.max(0,variantItems.length-1));
   Object.assign(variantSettings,saved.variantSettings||{});variantSettings.outlineWidth=Math.min(3,Math.max(0,Number(variantSettings.outlineWidth)||0));$('guideInstagram').checked=!!saved.guideInstagram;updateSocialGuides();alternateMirror=!!saved.alternateMirror;variantSelected.clear();
   $('variantCount').value=saved.variantCount||5;$('variantTheme').value=saved.variantTheme||'';$('variantGenre').value=saved.variantGenre||'';$('variantVoice').value=saved.variantVoice==='event'?'event':'artist';$('variantAllowEmojis').checked=!!saved.variantAllowEmojis;setEmojiButtons('emoji',$('variantAllowEmojis').checked);$('captionAllowEmojis').checked=saved.captionAllowEmojis!==false;setEmojiButtons('captionEmoji',$('captionAllowEmojis').checked);$('captionLanguage').value=saved.captionLanguage||'en';$('captionTone').value=saved.captionTone||'underground';$('captionInstructions').value=saved.captionInstructions||'';$('captionMinWords').value=saved.captionMinWords||2;$('captionMaxWords').value=saved.captionMaxWords||6;updateCaptionWordLimits('min');
+  $('captionGenerationStyle').value=saved.captionGenerationStyle||'';$('captionGenerationStyle').dispatchEvent(new Event('change'));
   $('variantName').value=saved.variantName||'Classified_Trial';
   $('variantResolution').value=saved.variantResolution||'1080x1920';$('variantFps').value=saved.variantFps||25;
   $('video').volume=saved.volume??1;$('video').muted=!!saved.muted;
   $('video').style.objectFit=fit;applyGrade();syncBlur();refresh();panel();
-  // Recovery must not change the active workspace while the user is editing.
   masterConfirmed=!!saved.masterConfirmed;
+  if(saved.workspace==='captions'&&variantItems.length)switchWorkspace('captions');
+  else if(saved.workspace==='variants'&&variantItems.length)switchWorkspace('variants');
   $('status').textContent='✓ Project en video automatisch hersteld';
  }catch(err){console.warn('Project recovery failed',err);$('status').textContent='Automatisch herstellen mislukt: '+err.message}
  finally{restoringProject=false;saveProjectLocally()}
