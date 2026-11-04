@@ -295,6 +295,7 @@ def render(data:Render, progress_job:str|None=None):
  job=uuid.uuid4().hex; outdir=WORK/job;outdir.mkdir()
  # The overlay is built using a drawtext filter with an escaped UTF-8 text file.
  results=[]
+ rendered_cache={}
  for i,txt in enumerate(data.texts):
   clip=outdir/f'clip_{i}.mp4'
   if data.hook:
@@ -340,6 +341,13 @@ def render(data:Render, progress_job:str|None=None):
   if data.textbar:vf+=':box=1:boxcolor=black@0.7:boxborderw=20'
   name=re.sub(r'[^A-Za-z0-9_-]','_',data.name)[:80] or 'Trial_Reel'
   target=outdir/f'{name}_{data.variant_numbers[i] if data.variant_numbers else i+1}.mp4'
+  cache_key=(txt.upper() if data.full_caps else txt, bool(data.mirror_half and i%2))
+  if cache_key in rendered_cache:
+   shutil.copyfile(rendered_cache[cache_key],target)
+   results.append(target)
+   if progress_job:
+    with RENDER_LOCK:RENDER_JOBS[progress_job].update(completed=i+1,current=i+1,percent=min(99,round(100*(i+1)/len(data.texts),1)))
+   continue
   bitrate_args=(['-b:v',f'{data.video_bitrate_mbps:.1f}M','-maxrate',f'{data.video_bitrate_mbps*1.5:.1f}M','-bufsize',f'{data.video_bitrate_mbps*2:.1f}M'] if data.video_bitrate_mbps is not None else ['-crf','20'])
   args=['-threads','1','-sws_flags','fast_bilinear',*ss,'-i',str(inp),'-filter_threads','1','-vf',vf,'-r',str(data.fps),'-c:v','libx264','-threads','1','-preset','ultrafast','-tune','fastdecode',*bitrate_args,'-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart','-max_muxing_queue_size','1024']
   if progress_job:
@@ -356,6 +364,7 @@ def render(data:Render, progress_job:str|None=None):
    error_output=process.stderr.read()[-900:]
    if process.wait()!=0:raise HTTPException(500,f'FFmpeg variant {i+1}: {error_output}')
   else:ff([*args,str(target)])
+  rendered_cache[cache_key]=target
   results.append(target)
   if progress_job:
    with RENDER_LOCK:RENDER_JOBS[progress_job].update(completed=i+1,percent=min(99,round(100*(i+1)/len(data.texts),1)))
@@ -364,7 +373,7 @@ def render(data:Render, progress_job:str|None=None):
   with (outdir/'captions.csv').open('w',newline='',encoding='utf-8-sig') as f:
    writer=csv.writer(f);writer.writerow(['filename','on_screen_text']);writer.writerows((p.name,t) for p,t in zip(results,data.texts))
  archive=WORK/(job+'.zip')
- with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as z:
+ with zipfile.ZipFile(archive,'w',zipfile.ZIP_STORED,allowZip64=True) as z:
   for p in outdir.iterdir():
    if p in results or p.name=='captions.csv':z.write(p,p.name)
  return {'download':'/api/download/'+job,'files':[p.name for p in results],'file_urls':['/api/download-file/'+job+'/'+p.name for p in results]}
