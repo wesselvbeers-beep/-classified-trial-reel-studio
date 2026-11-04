@@ -331,29 +331,34 @@ def render(data:Render, progress_job:str|None=None):
   if data.lut_id:
    lut=next((p for p in WORK.glob(data.lut_id+'.*') if p.suffix in ('.cube','.3dl')),None)
    if lut:vf+=f',lut3d=file={lut.as_posix()}'
-  txtfile=outdir/f'text_{i}.txt'
-  fontsize=max(12,min(400,round(data.text_size*w/max(100,data.preview_width))))
-  # Wrap to the same 70% preview width; preserve manual line breaks.
-  import textwrap
+  # Each line needs its own drawtext filter: FFmpeg otherwise left-aligns
+  # wrapped lines even when the whole text block is centered.
   raw_text=txt.upper() if data.full_caps else txt
+  fontsize=max(12,min(400,round(data.text_size*w/max(100,data.preview_width))))
+  import textwrap
   max_chars=max(6,int(w*.70/(fontsize*.57)))
-  wrapped='\n'.join('\n'.join(textwrap.wrap(line,width=max_chars,break_long_words=True,break_on_hyphens=False)) for line in raw_text.split('\n'))
-  txtfile.write_text(wrapped,encoding='utf-8')
-  x=f'(w*{max(0,min(100,data.text_x))/100:.5f}-text_w/2)'
-  y=f'(h*{max(0,min(100,data.text_y))/100:.5f}-text_h/2)'
+  lines=[part for line in raw_text.split('\\n') for part in (textwrap.wrap(line,width=max_chars,break_long_words=True,break_on_hyphens=False) or [''])]
   font='/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf' if data.italic else '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
-  border=max(0,min(4,int(round(float(data.outline_width)*96/72)))) if data.outline else 0
+  # CSS stroke is a full-width stroke; FFmpeg borderw is its radius.
+  css_stroke=min(3,max(0,float(data.outline_width)))*(96/72)*2
+  border=max(0,round(css_stroke*w/max(100,data.preview_width)/2)) if data.outline else 0
   fade=max(0,min(20,int(round(data.outline_fade)))) if data.shadow else 0
   color=data.text_color if re.fullmatch(r'#[0-9a-fA-F]{6}',data.text_color) else '#ffffff'
-  vf+=f",drawtext=fontfile={font}:textfile={txtfile.as_posix()}:fontcolor=0x{color[1:]}:fontsize={fontsize}:x={x}:y={y}:borderw={border}:bordercolor=black@1:line_spacing={round(fontsize*.15)}"
   distance=max(0,min(40,float(data.shadow_distance))) if data.shadow else 0
   angle=math.radians(float(data.shadow_angle)%360)
-  shadow_x=int(round(math.cos(angle)*distance))
-  shadow_y=int(round(math.sin(angle)*distance))
-  if data.shadow and (distance or fade) and data.shadow_opacity>0:
-   opacity=max(0,min(100,float(data.shadow_opacity)))/100
-   vf+=f":shadowcolor=black@{opacity:.3f}:shadowx={shadow_x}:shadowy={shadow_y}"
-  if data.textbar:vf+=':box=1:boxcolor=black@0.7:boxborderw=20'
+  shadow_x=int(round(math.cos(angle)*distance*w/max(100,data.preview_width)))
+  shadow_y=int(round(math.sin(angle)*distance*w/max(100,data.preview_width)))
+  line_height=fontsize*1.15
+  for line_no,line in enumerate(lines):
+   txtfile=outdir/f'text_{i}_{line_no}.txt'
+   txtfile.write_text(line or ' ',encoding='utf-8')
+   x=f'(w*{max(0,min(100,data.text_x))/100:.5f}-text_w/2)'
+   y=f'(h*{max(0,min(100,data.text_y))/100:.5f}+({line_no} - {(len(lines)-1)/2:.2f})*{line_height:.2f}-text_h/2)'
+   vf+=f",drawtext=fontfile={font}:textfile={txtfile.as_posix()}:fontcolor=0x{color[1:]}:fontsize={fontsize}:x={x}:y={y}:borderw={border}:bordercolor=black@1"
+   if data.shadow and (distance or fade) and data.shadow_opacity>0:
+    opacity=max(0,min(100,float(data.shadow_opacity)))/100
+    vf+=f":shadowcolor=black@{opacity:.3f}:shadowx={shadow_x}:shadowy={shadow_y}"
+   if data.textbar:vf+=':box=1:boxcolor=black@0.7:boxborderw=20'
   name=re.sub(r'[^A-Za-z0-9_-]','_',data.name)[:80] or 'Trial_Reel'
   target=outdir/f'{name}_{data.variant_numbers[i] if data.variant_numbers else i+1}.mp4'
   cache_key=(txt.upper() if data.full_caps else txt, bool(data.mirror_half and i%2))
