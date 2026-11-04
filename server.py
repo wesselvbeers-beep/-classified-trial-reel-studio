@@ -280,6 +280,12 @@ class Render(BaseModel):
  shadow_distance:float=0
  shadow_opacity:float=95
  shadow_angle:float=135
+ text_x:float=50
+ text_y:float=48
+ text_size:float=27
+ text_color:str='#ffffff'
+ text_weight:int=900
+ preview_width:float=377
 @app.post('/api/render')
 def render(data:Render, progress_job:str|None=None):
  if not re.fullmatch('[0-9a-f]{32}',data.id):raise HTTPException(400,'Ongeldig bestand')
@@ -325,12 +331,21 @@ def render(data:Render, progress_job:str|None=None):
   if data.lut_id:
    lut=next((p for p in WORK.glob(data.lut_id+'.*') if p.suffix in ('.cube','.3dl')),None)
    if lut:vf+=f',lut3d=file={lut.as_posix()}'
-  txtfile=outdir/f'text_{i}.txt';txtfile.write_text(txt.upper() if data.full_caps else txt,encoding='utf-8')
-  y={'top':'h*0.22','center':'(h-text_h)/2','bottom':'h*0.72'}.get(data.position,'(h-text_h)/2')
+  txtfile=outdir/f'text_{i}.txt'
+  fontsize=max(12,min(400,round(data.text_size*w/max(100,data.preview_width))))
+  # Wrap to the same 70% preview width; preserve manual line breaks.
+  import textwrap
+  raw_text=txt.upper() if data.full_caps else txt
+  max_chars=max(6,int(w*.70/(fontsize*.57)))
+  wrapped='\n'.join('\n'.join(textwrap.wrap(line,width=max_chars,break_long_words=True,break_on_hyphens=False)) for line in raw_text.split('\n'))
+  txtfile.write_text(wrapped,encoding='utf-8')
+  x=f'(w*{max(0,min(100,data.text_x))/100:.5f}-text_w/2)'
+  y=f'(h*{max(0,min(100,data.text_y))/100:.5f}-text_h/2)'
   font='/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf' if data.italic else '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
   border=max(0,min(4,int(round(float(data.outline_width)*96/72)))) if data.outline else 0
   fade=max(0,min(20,int(round(data.outline_fade)))) if data.shadow else 0
-  vf+=f",drawtext=fontfile={font}:textfile={txtfile.as_posix()}:fontcolor=white:fontsize={int(w*.055)}:x=(w-text_w)/2:y={y}:borderw={border}:bordercolor=black@1"
+  color=data.text_color if re.fullmatch(r'#[0-9a-fA-F]{6}',data.text_color) else '#ffffff'
+  vf+=f",drawtext=fontfile={font}:textfile={txtfile.as_posix()}:fontcolor=0x{color[1:]}:fontsize={fontsize}:x={x}:y={y}:borderw={border}:bordercolor=black@1:line_spacing={round(fontsize*.15)}"
   distance=max(0,min(40,float(data.shadow_distance))) if data.shadow else 0
   angle=math.radians(float(data.shadow_angle)%360)
   shadow_x=int(round(math.cos(angle)*distance))
